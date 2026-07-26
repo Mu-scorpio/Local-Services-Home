@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>本地服务管理</title>
+  <script>
+    // Apply saved theme before paint to avoid flash
+    (function () {
+      try {
+        var t = localStorage.getItem("lsm-theme");
+        if (t !== "light" && t !== "dark") {
+          t = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        }
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "dark");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-left">
+        <div class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5z"/>
+          </svg>
+        </div>
+        <div>
+          <h1>本地服务管理</h1>
+          <p class="subtitle">统一管理 127.0.0.1 上的 WebUI 服务</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="theme-toggle" role="group" aria-label="界面主题">
+          <button type="button" id="theme-light" data-theme-set="light" title="白天模式">
+            <span class="icon" aria-hidden="true">☀</span> 白天
+          </button>
+          <button type="button" id="theme-dark" data-theme-set="dark" title="夜间模式">
+            <span class="icon" aria-hidden="true">☾</span> 夜间
+          </button>
+        </div>
+        <button type="button" class="btn btn-ghost" id="btn-refresh" title="刷新状态">刷新</button>
+        <button type="button" class="btn btn-primary" id="btn-add">添加服务</button>
+      </div>
+    </header>
+
+    <main>
+      <section class="stats" id="stats">
+        <div class="stat-card">
+          <span class="stat-label">服务总数</span>
+          <span class="stat-value" id="stat-total">0</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">运行中</span>
+          <span class="stat-value running" id="stat-running">0</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">已停止</span>
+          <span class="stat-value stopped" id="stat-stopped">0</span>
+        </div>
+      </section>
+
+      <section class="grid" id="service-grid" aria-live="polite"></section>
+
+      <div class="empty" id="empty-state" hidden>
+        <div class="empty-icon">⬡</div>
+        <h2>还没有服务</h2>
+        <p>添加本地服务目录，即可在此统一启停并打开 WebUI。</p>
+        <button type="button" class="btn btn-primary" id="btn-add-empty">添加第一个服务</button>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modal: Add / Edit -->
+  <div class="modal-overlay" id="modal" hidden>
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <div class="modal-header">
+        <h2 id="modal-title">添加服务</h2>
+        <button type="button" class="icon-btn" id="modal-close" aria-label="关闭">×</button>
+      </div>
+      <form id="service-form" class="modal-body">
+        <input type="hidden" id="f-id" />
+
+        <div class="row-2">
+          <label class="field">
+            <span>端口 <em>*</em></span>
+            <div class="row">
+              <input type="number" id="f-port" required min="1" max="65535" placeholder="8080" />
+              <button type="button" class="btn btn-primary" id="btn-discover" title="根据端口定位进程与目录">从端口探测</button>
+            </div>
+            <small class="hint">服务运行中时，可只填端口 → 探测，自动识别目录与启动脚本</small>
+          </label>
+          <label class="field">
+            <span>WebUI 地址</span>
+            <input type="url" id="f-webui" placeholder="http://127.0.0.1:8080/" />
+          </label>
+        </div>
+
+        <label class="field">
+          <span>名称</span>
+          <input type="text" id="f-name" placeholder="可留空，探测或保存时自动填充" maxlength="120" />
+        </label>
+
+        <label class="field">
+          <span>备注</span>
+          <input type="text" id="f-notes" placeholder="可选说明" />
+        </label>
+
+        <label class="field">
+          <span>服务目录</span>
+          <div class="row">
+            <input type="text" id="f-directory" placeholder="探测自动填写，或点「选择文件夹」" readonly />
+            <button type="button" class="btn btn-ghost" id="btn-browse" title="打开系统文件夹选择">选择文件夹</button>
+            <button type="button" class="btn btn-ghost" id="btn-scan">扫描脚本</button>
+          </div>
+          <small class="hint">停止服务时将结束占用该端口的进程，无需停止脚本</small>
+        </label>
+
+        <div class="row-2">
+          <label class="field">
+            <span>启动脚本</span>
+            <select id="f-start">
+              <option value="">— 未选择 —</option>
+            </select>
+          </label>
+          <label class="field">
+            <span>停止脚本（可选）</span>
+            <select id="f-stop">
+              <option value="">— 不使用，按端口结束进程 —</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="scan-result" class="scan-result" hidden></div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn btn-ghost" id="btn-refresh-icon" hidden>重新获取图标</button>
+          <div class="spacer"></div>
+          <button type="button" class="btn btn-ghost" id="btn-cancel">取消</button>
+          <button type="submit" class="btn btn-primary" id="btn-save">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="toast-host" id="toast-host" aria-live="polite"></div>
+
+  <script src="/js/app.js"></script>
+</body>
+</html>
