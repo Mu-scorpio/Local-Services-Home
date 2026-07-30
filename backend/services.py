@@ -6,7 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
-from backend.config import SERVICES_FILE, ensure_data_dirs
+from backend import config
+from backend.config import ensure_data_dirs
 from backend.icon_fetcher import clear_icon, fetch_and_cache_icon, icon_file_for
 from backend.port_check import check_local_port
 from backend.process_info import (
@@ -92,7 +93,7 @@ class StopRequest(BaseModel):
 def _load_raw() -> list[dict]:
     ensure_data_dirs()
     try:
-        data = json.loads(SERVICES_FILE.read_text(encoding="utf-8"))
+        data = json.loads(config.SERVICES_FILE.read_text(encoding="utf-8"))
         if isinstance(data, list):
             return data
     except (json.JSONDecodeError, OSError):
@@ -102,7 +103,7 @@ def _load_raw() -> list[dict]:
 
 def _save_raw(items: list[dict]) -> None:
     ensure_data_dirs()
-    SERVICES_FILE.write_text(
+    config.SERVICES_FILE.write_text(
         json.dumps(items, ensure_ascii=False, indent=2),
         encoding="utf-8",
     )

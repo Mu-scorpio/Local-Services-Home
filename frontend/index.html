@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>本地服务管理</title>
+  <link rel="icon" href="/assets/app-icon.svg" type="image/svg+xml" />
   <script>
     // Apply saved theme before paint to avoid flash
     (function () {
@@ -47,6 +48,27 @@
         <button type="button" class="btn btn-primary" id="btn-add">添加服务</button>
       </div>
     </header>
+
+    <section class="storage-strip" aria-labelledby="storage-title">
+      <div class="storage-icon" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5h4l2 2h7A2.5 2.5 0 0 1 21 9.5v7A2.5 2.5 0 0 1 18.5 19h-13A2.5 2.5 0 0 1 3 16.5v-9z" />
+          <path d="M3.5 10h17" />
+        </svg>
+      </div>
+      <div class="storage-content">
+        <div class="storage-heading">
+          <h2 id="storage-title">数据目录</h2>
+          <span class="storage-status" id="storage-status">独立保存</span>
+        </div>
+        <code class="storage-path" id="storage-path">正在读取…</code>
+        <p>应用移动后配置仍会保留；可按需改到其他可写文件夹。</p>
+      </div>
+      <div class="storage-actions">
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-storage-change">修改目录</button>
+        <button type="button" class="btn btn-ghost btn-sm" id="btn-storage-reset" hidden>恢复默认</button>
+      </div>
+    </section>
 
     <main>
       <section class="stats" id="stats">
@@ -142,6 +164,32 @@
           <div class="spacer"></div>
           <button type="button" class="btn btn-ghost" id="btn-cancel">取消</button>
           <button type="submit" class="btn btn-primary" id="btn-save">保存</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Storage location -->
+  <div class="modal-overlay" id="storage-modal" hidden>
+    <div class="modal storage-modal" role="dialog" aria-modal="true" aria-labelledby="storage-modal-title">
+      <div class="modal-header">
+        <h2 id="storage-modal-title">修改数据目录</h2>
+        <button type="button" class="icon-btn" id="storage-modal-close" aria-label="关闭">×</button>
+      </div>
+      <form id="storage-form" class="modal-body">
+        <label class="field">
+          <span>保存路径</span>
+          <div class="row">
+            <input type="text" id="f-storage-path" required autocomplete="off" />
+            <button type="button" class="btn btn-ghost" id="btn-storage-browse">选择文件夹</button>
+          </div>
+          <small class="hint">修改后会把现有配置和图标缓存合并到新目录；原目录不会被删除。</small>
+        </label>
+        <div class="storage-default-hint" id="storage-default-hint"></div>
+        <div class="modal-footer">
+          <div class="spacer"></div>
+          <button type="button" class="btn btn-ghost" id="btn-storage-cancel">取消</button>
+          <button type="submit" class="btn btn-primary" id="btn-storage-save">保存目录</button>
         </div>
       </form>
     </div>

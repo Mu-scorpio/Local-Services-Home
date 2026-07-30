@@ -21,6 +21,14 @@ data/icons/*
 .DS_Store
 Thumbs.db
 
+# Build artifacts
+dist/
+build/
+build-onefile/
+
+# Playwright test artifacts
+.playwright-cli/
+
 # Logs / temp
 *.log
 *.tmp

@@ -26,6 +26,13 @@ def pick_folder(initial_dir: str | None = None) -> str:
         if p.is_dir():
             init = str(p.resolve())
 
+    # In frozen (PyInstaller exe) mode, sys.executable is the app itself,
+    # so tkinter subprocess won't work. Use PowerShell directly.
+    if getattr(sys, 'frozen', False):
+        if sys.platform == "win32":
+            return _pick_with_powershell(init)
+        raise FolderPickError("打包模式仅支持 Windows")
+
     # Prefer tkinter (stdlib); fall back to PowerShell FolderBrowserDialog
     try:
         return _pick_with_tk(init)

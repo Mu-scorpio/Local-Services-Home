@@ -4,7 +4,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 
-from backend.config import ICONS_DIR
+from backend import config
 from backend.port_check import check_local_port
 
 ICON_LINK_RE = re.compile(
@@ -17,14 +17,14 @@ HREF_RE = re.compile(r"""href=["']([^"']+)["']""", re.IGNORECASE)
 def icon_file_for(service_id: str) -> Path | None:
     """Return existing cached icon path if any."""
     for ext in (".png", ".ico", ".svg", ".jpg", ".jpeg", ".webp", ".gif"):
-        p = ICONS_DIR / f"{service_id}{ext}"
+        p = config.ICONS_DIR / f"{service_id}{ext}"
         if p.is_file():
             return p
     return None
 
 
 def clear_icon(service_id: str) -> None:
-    for p in ICONS_DIR.glob(f"{service_id}.*"):
+    for p in config.ICONS_DIR.glob(f"{service_id}.*"):
         try:
             p.unlink()
         except OSError:
@@ -91,7 +91,7 @@ async def fetch_and_cache_icon(
                     if not ext:
                         continue
                     clear_icon(service_id)
-                    out = ICONS_DIR / f"{service_id}{ext}"
+                    out = config.ICONS_DIR / f"{service_id}{ext}"
                     out.write_bytes(r.content)
                     return out
                 except httpx.HTTPError:

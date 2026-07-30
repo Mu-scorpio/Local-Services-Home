@@ -11,7 +11,10 @@
   const emptyState = $("#empty-state");
   const modal = $("#modal");
   const form = $("#service-form");
+  const storageModal = $("#storage-modal");
+  const storageForm = $("#storage-form");
   const THEME_KEY = "lsm-theme";
+  let storageSettings = null;
 
   // ---------- Theme ----------
   function getTheme() {
@@ -20,7 +23,7 @@
       : "dark";
   }
 
-  function setTheme(theme) {
+  function setTheme(theme, { syncServer = true } = {}) {
     const t = theme === "light" ? "light" : "dark";
     document.documentElement.setAttribute("data-theme", t);
     try {
@@ -28,6 +31,10 @@
     } catch {
       /* ignore */
     }
+    // Keep the separate pywebview popup in sync while it is already open.
+    window.dispatchEvent(new CustomEvent("lsm-theme-change", { detail: t }));
+    window.postMessage({ type: "lsm-theme-change", theme: t }, "*");
+    if (syncServer) saveSharedTheme(t);
     syncThemeToggle();
   }
 
@@ -65,6 +72,30 @@
       throw new Error(msg);
     }
     return data;
+  }
+
+  async function saveSharedTheme(theme) {
+    try {
+      await api("/api/settings/theme", {
+        method: "PUT",
+        body: JSON.stringify({ theme }),
+      });
+    } catch {
+      /* localStorage remains the fallback if the backend is unavailable */
+    }
+  }
+
+  async function loadSharedTheme() {
+    try {
+      const result = await api("/api/settings/theme");
+      if (result?.theme === "light" || result?.theme === "dark") {
+        setTheme(result.theme, { syncServer: false });
+      } else {
+        await saveSharedTheme(getTheme());
+      }
+    } catch {
+      syncThemeToggle();
+    }
   }
 
   // ---------- Toast ----------
@@ -177,6 +208,85 @@
   async function loadServices() {
     services = await api("/api/services");
     render();
+  }
+
+  // ---------- Persistent storage ----------
+  function renderStorageSettings(settings) {
+    storageSettings = settings;
+    const pathEl = $("#storage-path");
+    const statusEl = $("#storage-status");
+    const resetBtn = $("#btn-storage-reset");
+    if (!pathEl || !statusEl || !resetBtn || !settings) return;
+    pathEl.textContent = settings.path;
+    pathEl.title = settings.path;
+    statusEl.textContent = settings.is_custom ? "自定义位置" : "默认独立保存";
+    resetBtn.hidden = !settings.is_custom;
+  }
+
+  async function loadStorageSettings() {
+    const settings = await api("/api/settings/storage");
+    renderStorageSettings(settings);
+  }
+
+  function openStorageModal() {
+    if (!storageSettings) return;
+    $("#f-storage-path").value = storageSettings.path;
+    $("#storage-default-hint").textContent = `默认目录：${storageSettings.default_path}`;
+    storageModal.hidden = false;
+    $("#f-storage-path").focus();
+    $("#f-storage-path").select();
+  }
+
+  function closeStorageModal() {
+    storageModal.hidden = true;
+    storageForm.reset();
+  }
+
+  async function browseStorageDirectory() {
+    const btn = $("#btn-storage-browse");
+    const prev = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "选择中…";
+    try {
+      const result = await api("/api/browse-folder", {
+        method: "POST",
+        body: JSON.stringify({ initial_dir: $("#f-storage-path").value.trim() || null }),
+      });
+      if (result.cancelled || !result.path) return;
+      $("#f-storage-path").value = result.path;
+    } catch (e) {
+      toast(e.message, "error");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prev;
+    }
+  }
+
+  async function saveStorageDirectory(e) {
+    e.preventDefault();
+    const path = $("#f-storage-path").value.trim();
+    if (!path) {
+      toast("请输入数据目录", "error");
+      return;
+    }
+    const btn = $("#btn-storage-save");
+    const prev = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = "保存中…";
+    try {
+      const settings = await api("/api/settings/storage", {
+        method: "PUT",
+        body: JSON.stringify({ path }),
+      });
+      renderStorageSettings(settings);
+      closeStorageModal();
+      toast("数据目录已更新，现有数据已保留", "success");
+    } catch (e) {
+      toast(e.message, "error");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = prev;
+    }
   }
 
   async function pollStatus() {
@@ -468,6 +578,16 @@
   $("#btn-scan").addEventListener("click", doScan);
   $("#btn-discover").addEventListener("click", discoverFromPort);
   $("#btn-browse").addEventListener("click", browseFolder);
+  $("#btn-storage-change").addEventListener("click", openStorageModal);
+  $("#btn-storage-reset").addEventListener("click", async () => {
+    if (!storageSettings?.is_custom) return;
+    $("#f-storage-path").value = storageSettings.default_path;
+    await saveStorageDirectory({ preventDefault() {} });
+  });
+  $("#storage-modal-close").addEventListener("click", closeStorageModal);
+  $("#btn-storage-cancel").addEventListener("click", closeStorageModal);
+  $("#btn-storage-browse").addEventListener("click", browseStorageDirectory);
+  storageForm.addEventListener("submit", saveStorageDirectory);
   // Single click on path field also opens folder picker
   $("#f-directory").addEventListener("click", () => {
     if ($("#f-directory").readOnly) browseFolder();
@@ -518,6 +638,10 @@
 
   modal.addEventListener("click", (e) => {
     if (e.target === modal) closeModal();
+  });
+
+  storageModal.addEventListener("click", (e) => {
+    if (e.target === storageModal) closeStorageModal();
   });
 
   document.addEventListener("keydown", (e) => {
@@ -572,7 +696,9 @@
   async function init() {
     syncThemeToggle();
     try {
+      await loadSharedTheme();
       await loadServices();
+      await loadStorageSettings();
     } catch (e) {
       toast("加载失败: " + e.message, "error");
     }

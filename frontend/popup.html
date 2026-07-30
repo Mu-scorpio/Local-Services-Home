@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>服务管理</title>
+  <link rel="icon" href="/assets/app-icon.svg" type="image/svg+xml" />
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem("lsm-theme");
+        if (t !== "light" && t !== "dark") {
+          t = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+        }
+        document.documentElement.setAttribute("data-theme", t);
+      } catch (e) {
+        document.documentElement.setAttribute("data-theme", "dark");
+      }
+    })();
+  </script>
+  <link rel="stylesheet" href="/css/popup.css" />
+</head>
+<body>
+  <div class="popup-app">
+    <!-- Title bar (draggable) -->
+    <div class="popup-titlebar" id="titlebar">
+      <div class="titlebar-left">
+        <img class="app-icon" src="/assets/app-icon.svg" alt="" />
+        <span class="app-title">本地服务管理</span>
+      </div>
+      <div class="titlebar-actions">
+        <button type="button" class="tb-btn" id="btn-open-main" title="打开主窗口">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+            <polyline points="15 3 21 3 21 9"/>
+            <line x1="10" y1="14" x2="21" y2="3"/>
+          </svg>
+        </button>
+        <button type="button" class="tb-btn" id="btn-refresh" title="刷新">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="23 4 23 10 17 10"/>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+          </svg>
+        </button>
+        <button type="button" class="tb-btn tb-close" id="btn-close" title="收起">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Stats bar -->
+    <div class="popup-stats">
+      <span class="stat"><b id="stat-running">0</b> 运行中</span>
+      <span class="stat-divider">|</span>
+      <span class="stat"><b id="stat-total">0</b> 总计</span>
+    </div>
+
+    <!-- Service list -->
+    <div class="popup-list" id="service-list">
+      <div class="loading" id="loading">加载中...</div>
+    </div>
+
+    <!-- Footer -->
+    <div class="popup-footer">
+      <button type="button" class="footer-btn" id="btn-add-service">+ 添加服务</button>
+      <span class="footer-hint" id="footer-status">就绪</span>
+    </div>
+  </div>
+
+  <script src="/js/popup.js"></script>
+</body>
+</html>

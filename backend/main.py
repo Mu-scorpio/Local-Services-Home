@@ -6,7 +6,16 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from backend import services as svc
-from backend.config import FRONTEND_DIR, MANAGER_HOST, MANAGER_PORT, ensure_data_dirs
+from backend.config import (
+    FRONTEND_DIR,
+    MANAGER_HOST,
+    MANAGER_PORT,
+    ensure_data_dirs,
+    get_storage_settings,
+    get_theme,
+    set_storage_directory,
+    set_theme,
+)
 from backend.folder_picker import FolderPickCancelled, FolderPickError, pick_folder
 from backend.process_info import ProcessInfoError
 from backend.process_runner import ScriptError
@@ -29,6 +38,14 @@ class BrowseFolderRequest(BaseModel):
     initial_dir: str | None = None
 
 
+class StorageSettingsUpdate(BaseModel):
+    path: str | None = None
+
+
+class ThemeSettingsUpdate(BaseModel):
+    theme: str
+
+
 @app.get("/api/health")
 def health():
     return {"ok": True, "host": MANAGER_HOST, "port": MANAGER_PORT}
@@ -47,6 +64,34 @@ def api_browse_folder(body: BrowseFolderRequest | None = None):
         raise HTTPException(status_code=500, detail=str(e)) from e
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"无法打开文件夹选择器: {e}") from e
+
+
+@app.get("/api/settings/storage")
+def api_storage_settings():
+    return get_storage_settings()
+
+
+@app.put("/api/settings/storage")
+def api_update_storage_settings(body: StorageSettingsUpdate):
+    try:
+        return set_storage_directory(body.path)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"保存数据目录失败：{e}") from e
+
+
+@app.get("/api/settings/theme")
+def api_theme_settings():
+    return {"theme": get_theme()}
+
+
+@app.put("/api/settings/theme")
+def api_update_theme_settings(body: ThemeSettingsUpdate):
+    try:
+        return {"theme": set_theme(body.theme)}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @app.get("/api/services")
@@ -186,6 +231,14 @@ def index():
     if not index_path.is_file():
         raise HTTPException(status_code=404, detail="前端未找到")
     return FileResponse(index_path)
+
+
+@app.get("/popup")
+def popup():
+    popup_path = FRONTEND_DIR / "popup.html"
+    if not popup_path.is_file():
+        raise HTTPException(status_code=404, detail="弹窗页面未找到")
+    return FileResponse(popup_path)
 
 
 @app.get("/{asset_path:path}")
