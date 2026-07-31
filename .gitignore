@@ -22,3 +22,8 @@ build/
 # Logs / temp
 *.log
 *.tmp
+
+# Local screenshots
+*.png
+!docs/screenshots/*.png
+
