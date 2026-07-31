@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 # Ensure project root is on sys.path
-if getattr(sys, 'frozen', False):
+if getattr(sys, "frozen", False):
     ROOT_DIR = Path(sys._MEIPASS)
 else:
     ROOT_DIR = Path(__file__).resolve().parent.parent
@@ -22,11 +22,11 @@ os.chdir(ROOT_DIR)
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from backend.config import MANAGER_HOST, MANAGER_PORT, ensure_data_dirs
 from backend.app_icon import create_icon_image
+from backend.config import MANAGER_HOST, MANAGER_PORT, ensure_data_dirs
 
 # ---------------------------------------------------------------------------
-# Backend server (run uvicorn in a daemon thread)
+# Backend server
 # ---------------------------------------------------------------------------
 
 _server_started = threading.Event()
@@ -34,15 +34,14 @@ _server_started = threading.Event()
 
 def _kill_existing_on_port():
     """Kill any existing process listening on MANAGER_PORT (stale server)."""
-    import subprocess
     import socket
+    import subprocess
 
-    # Check if port is already in use
     try:
         with socket.create_connection((MANAGER_HOST, MANAGER_PORT), timeout=0.3):
-            pass  # Port is open, need to kill
+            pass
     except OSError:
-        return  # Port is free, nothing to kill
+        return
 
     if sys.platform == "win32":
         try:
@@ -77,7 +76,6 @@ def _kill_existing_on_port():
 
 
 def _run_server():
-    """Start the FastAPI/uvicorn server in background."""
     import uvicorn
 
     config = uvicorn.Config(
@@ -96,13 +94,9 @@ def _run_server():
 
 def start_backend():
     ensure_data_dirs()
-
-    # Kill stale server from previous session
     _kill_existing_on_port()
-
     t = threading.Thread(target=_run_server, daemon=True)
     t.start()
-    # Wait until server is accepting connections
     import socket
 
     for _ in range(80):
@@ -115,45 +109,104 @@ def start_backend():
 
 
 # ---------------------------------------------------------------------------
-# Tray icon
+# Win32 helpers
 # ---------------------------------------------------------------------------
 
+
 def _create_tray_icon_image():
-    """Generate the shared application icon for the system tray."""
     return create_icon_image(64)
 
 
-class DesktopApp:
-    """Manages tray icon, popup window, and main window.
+def _work_area_physical_near_cursor():
+    """Physical-pixel work area (left, top, right, bottom) under the cursor."""
+    if sys.platform != "win32":
+        return 0, 0, 1920, 1080
 
-    Architecture:
-    - A tiny hidden 'anchor' window keeps webview.start() alive forever.
-    - Main and popup windows are created lazily on first open (saves RAM/CPU
-      while the app sits in the tray with no UI open).
-    - Quit via tray menu calls os._exit(0).
+    import ctypes
+
+    class POINT(ctypes.Structure):
+        _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+
+    class RECT(ctypes.Structure):
+        _fields_ = [
+            ("left", ctypes.c_long),
+            ("top", ctypes.c_long),
+            ("right", ctypes.c_long),
+            ("bottom", ctypes.c_long),
+        ]
+
+    class MONITORINFO(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", ctypes.c_ulong),
+            ("rcMonitor", RECT),
+            ("rcWork", RECT),
+            ("dwFlags", ctypes.c_ulong),
+        ]
+
+    user32 = ctypes.windll.user32
+    pt = POINT()
+    if not user32.GetCursorPos(ctypes.byref(pt)):
+        pt.x, pt.y = 200, 200
+
+    monitor = user32.MonitorFromPoint(pt, 2)  # MONITOR_DEFAULTTONEAREST
+    info = MONITORINFO()
+    info.cbSize = ctypes.sizeof(MONITORINFO)
+    if monitor and user32.GetMonitorInfoW(monitor, ctypes.byref(info)):
+        r = info.rcWork
+        return int(r.left), int(r.top), int(r.right), int(r.bottom)
+
+    rect = RECT()
+    if user32.SystemParametersInfoW(0x0030, 0, ctypes.byref(rect), 0):
+        return int(rect.left), int(rect.top), int(rect.right), int(rect.bottom)
+
+    return 0, 0, user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+
+
+def _run_on_ui(native, fn) -> bool:
+    """Run fn on the WinForms UI thread. Returns True if scheduled/ran."""
+    if native is None:
+        return False
+    try:
+        from System import Action
+
+        if getattr(native, "InvokeRequired", False):
+            native.Invoke(Action(fn))
+        else:
+            fn()
+        return True
+    except Exception:
+        try:
+            fn()
+            return True
+        except Exception:
+            return False
+
+
+class DesktopApp:
+    """Tray + main window + compact popup.
+
+    Important (Windows / EdgeChromium / pywebview):
+    - The *first* create_window() is the master and owns the message loop.
+      It must be a real UI window (we use main), not a 1x1 anchor.
+    - pywebview.move() multiplies coords by DPI scale; Win32 APIs return
+      physical pixels. Positioning the popup via native.Location avoids the
+      double-scale off-screen bug on 125%/150% DPI.
+    - show/hide/move from the tray thread must go through WinForms Invoke.
     """
 
-    # Minimal document — no polling, no heavy frontend while idle in tray.
-    _ANCHOR_HTML = (
-        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
-        "<title>Local Services Home</title></head>"
-        "<body style='margin:0;background:#111'></body></html>"
-    )
+    _POPUP_W = 380
+    _POPUP_H = 520
 
     def __init__(self):
-        self.anchor_window = None
         self.main_window = None
         self.popup_window = None
         self.tray_icon = None
         self._popup_visible = False
         self._main_visible = False
-        self._window_lock = threading.Lock()
+        self._ready = threading.Event()
         self._api = self.Api(self)
 
-    # ------ pywebview API class (exposed to JS) ------
     class Api:
-        """JS-callable API bridge for popup window."""
-
         def __init__(self, app: "DesktopApp"):
             self._app = app
 
@@ -166,120 +219,163 @@ class DesktopApp:
             return True
 
         def open_external(self, url: str):
-            """Open URL in default browser."""
             import webbrowser
+
             webbrowser.open(url)
             return True
 
-    # ------ Window management ------
+    # ------ Popup placement / show (native path) ------
 
-    def _get_popup_position(self):
-        """Calculate popup position near bottom-right (above taskbar)."""
-        try:
-            import ctypes
-            user32 = ctypes.windll.user32
-            screen_w = user32.GetSystemMetrics(0)
-            screen_h = user32.GetSystemMetrics(1)
-        except Exception:
-            screen_w, screen_h = 1920, 1080
-        popup_w, popup_h = 380, 520
-        x = screen_w - popup_w - 20
-        y = screen_h - popup_h - 60
-        return x, y, popup_w, popup_h
+    def _popup_native(self):
+        win = self.popup_window
+        return getattr(win, "native", None) if win else None
 
-    def _ensure_main_window(self):
-        """Create the full main window on first use."""
-        import webview
+    def _main_native(self):
+        win = self.main_window
+        return getattr(win, "native", None) if win else None
 
-        with self._window_lock:
-            if self.main_window is not None:
-                return self.main_window
-            main_url = f"http://{MANAGER_HOST}:{MANAGER_PORT}/"
-            self.main_window = webview.create_window(
-                title="本地服务管理",
-                url=main_url,
-                width=1100,
-                height=750,
-                min_size=(800, 550),
-                resizable=True,
-                fullscreen=False,
-                on_top=False,
-                hidden=True,
-            )
+    def _place_and_show_popup_native(self) -> bool:
+        """Position + show popup using WinForms native handle (physical px)."""
+        native = self._popup_native()
+        if native is None:
+            return False
 
-            def on_main_closing():
-                self.hide_main_window()
-                return False
+        left, top, right, bottom = _work_area_physical_near_cursor()
+        margin = 14
 
-            self.main_window.events.closing += on_main_closing
-            return self.main_window
+        def _do():
+            from System.Drawing import Point
+            from System.Windows.Forms import FormStartPosition, FormWindowState
 
-    def _ensure_popup_window(self):
-        """Create the compact popup window on first use."""
-        import webview
+            w = int(getattr(native, "Width", 0) or self._POPUP_W)
+            h = int(getattr(native, "Height", 0) or self._POPUP_H)
+            if w < 200 or h < 200:
+                w, h = self._POPUP_W, self._POPUP_H
+                try:
+                    from System.Drawing import Size
 
-        with self._window_lock:
-            if self.popup_window is not None:
-                return self.popup_window
-            popup_url = f"http://{MANAGER_HOST}:{MANAGER_PORT}/popup"
-            x, y, pw, ph = self._get_popup_position()
-            self.popup_window = webview.create_window(
-                title="服务管理",
-                url=popup_url,
-                width=pw,
-                height=ph,
-                x=x,
-                y=y,
-                resizable=False,
-                fullscreen=False,
-                on_top=True,
-                frameless=True,
-                hidden=True,
-                js_api=self._api,
-            )
+                    native.Size = Size(w, h)
+                except Exception:
+                    pass
 
-            def on_popup_closing():
-                self.hide_popup()
-                return False
+            x = right - w - margin
+            y = bottom - h - margin
+            x = max(left + margin, min(x, right - w - margin))
+            y = max(top + margin, min(y, bottom - h - margin))
 
-            self.popup_window.events.closing += on_popup_closing
-            return self.popup_window
+            native.StartPosition = FormStartPosition.Manual
+            native.Location = Point(int(x), int(y))
+            native.TopMost = True
+            try:
+                native.Opacity = 1.0
+            except Exception:
+                pass
+            if native.WindowState == FormWindowState.Minimized:
+                native.WindowState = FormWindowState.Normal
+            native.Show()
+            native.Activate()
+            native.BringToFront()
+
+        return _run_on_ui(native, _do)
+
+    def _hide_popup_native(self) -> bool:
+        native = self._popup_native()
+        if native is None:
+            return False
+
+        def _do():
+            native.Hide()
+
+        return _run_on_ui(native, _do)
+
+    def _show_main_native(self) -> bool:
+        native = self._main_native()
+        if native is None:
+            return False
+
+        def _do():
+            try:
+                from System.Windows.Forms import FormWindowState
+
+                if native.WindowState == FormWindowState.Minimized:
+                    native.WindowState = FormWindowState.Normal
+            except Exception:
+                pass
+            native.Show()
+            native.Activate()
+            native.BringToFront()
+
+        return _run_on_ui(native, _do)
+
+    def _hide_main_native(self) -> bool:
+        native = self._main_native()
+        if native is None:
+            return False
+
+        def _do():
+            native.Hide()
+
+        return _run_on_ui(native, _do)
+
+    # ------ Public window API ------
 
     def show_main_window(self):
-        """Show the full-featured main window (lazy-create)."""
-        win = self._ensure_main_window()
-        if win:
-            win.show()
+        if not self._ready.wait(timeout=15):
+            return
+        if self._show_main_native():
             self._main_visible = True
+            return
+        # Fallback to pywebview API
+        if self.main_window:
+            try:
+                self.main_window.show()
+                self._main_visible = True
+            except Exception:
+                pass
 
     def hide_main_window(self):
-        """Hide main window (keep instance for fast re-open)."""
+        if self._hide_main_native():
+            self._main_visible = False
+            return
         if self.main_window:
-            self.main_window.hide()
+            try:
+                self.main_window.hide()
+            except Exception:
+                pass
             self._main_visible = False
 
     def toggle_popup(self):
-        """Toggle popup visibility (called from tray click)."""
         if self._popup_visible:
             self.hide_popup()
         else:
             self.show_popup()
 
     def show_popup(self):
-        """Show the compact popup window (lazy-create)."""
-        win = self._ensure_popup_window()
-        if win:
-            win.show()
+        if not self._ready.wait(timeout=15):
+            return
+        if self._place_and_show_popup_native():
             self._popup_visible = True
+            return
+        # Fallback
+        if self.popup_window:
+            try:
+                self.popup_window.show()
+                self._popup_visible = True
+            except Exception:
+                pass
 
     def hide_popup(self):
-        """Hide the popup window."""
+        if self._hide_popup_native():
+            self._popup_visible = False
+            return
         if self.popup_window:
-            self.popup_window.hide()
+            try:
+                self.popup_window.hide()
+            except Exception:
+                pass
             self._popup_visible = False
 
     def quit_app(self):
-        """Quit the entire application."""
         if self.tray_icon:
             try:
                 self.tray_icon.stop()
@@ -287,7 +383,7 @@ class DesktopApp:
                 pass
         os._exit(0)
 
-    # ------ Tray icon ------
+    # ------ Tray ------
 
     def _setup_tray(self):
         import pystray
@@ -318,55 +414,88 @@ class DesktopApp:
             menu=menu,
         )
 
-    # ------ Main entry ------
+    # ------ Entry ------
 
     def run(self):
-        """Start the desktop application."""
         import webview
 
-        print("[桌面模式] 正在启动后端服务...")
+        print("[desktop] starting backend...")
         if not start_backend():
-            print("[错误] 后端启动失败")
+            print("[desktop] backend failed to start")
             return 1
 
-        print(f"[桌面模式] 后端已就绪 http://{MANAGER_HOST}:{MANAGER_PORT}")
-        print("[桌面模式] 正在初始化系统托盘...")
+        print(f"[desktop] backend ready http://{MANAGER_HOST}:{MANAGER_PORT}")
+        print("[desktop] tray init...")
 
         self._setup_tray()
+        threading.Thread(target=self.tray_icon.run, daemon=True).start()
+        time.sleep(0.25)
 
-        # Run tray icon in a daemon thread
-        tray_thread = threading.Thread(target=self.tray_icon.run, daemon=True)
-        tray_thread.start()
-        time.sleep(0.3)
-
-        # Only a tiny anchor window at startup — no full WebUI until user opens UI.
-        # This is the main background RAM/CPU saving for tray-only use.
-        self.anchor_window = webview.create_window(
-            title="Local Services Home",
-            html=self._ANCHOR_HTML,
-            width=1,
-            height=1,
-            hidden=True,
+        # FIRST window = master (message loop). Must be a real window, not 1x1.
+        main_url = f"http://{MANAGER_HOST}:{MANAGER_PORT}/"
+        self.main_window = webview.create_window(
+            title="本地服务管理",
+            url=main_url,
+            width=1100,
+            height=750,
+            min_size=(800, 550),
+            resizable=True,
+            fullscreen=False,
             on_top=False,
+            hidden=True,
+            background_color="#0f1218",
         )
 
-        def on_anchor_closing():
-            # Never destroy the anchor; only quit via tray menu.
+        def on_main_closing():
+            self.hide_main_window()
             return False
 
-        self.anchor_window.events.closing += on_anchor_closing
+        self.main_window.events.closing += on_main_closing
 
-        print("[桌面模式] 启动完成，托盘图标已就绪（界面按需打开）。")
+        # Popup is a child window (created before start so native exists)
+        popup_url = f"http://{MANAGER_HOST}:{MANAGER_PORT}/popup"
+        self.popup_window = webview.create_window(
+            title="服务管理",
+            url=popup_url,
+            width=self._POPUP_W,
+            height=self._POPUP_H,
+            resizable=False,
+            fullscreen=False,
+            on_top=True,
+            frameless=True,
+            easy_drag=True,
+            shadow=True,
+            hidden=True,
+            background_color="#0f1218",
+            js_api=self._api,
+        )
 
-        # Blocks until process exit (quit_app → os._exit).
+        def on_popup_closing():
+            self.hide_popup()
+            return False
+
+        self.popup_window.events.closing += on_popup_closing
+
+        def on_shown():
+            # Both windows briefly Show() then Hide() when hidden=True.
+            # Mark ready so tray actions can use native handles.
+            self._ready.set()
+            # Ensure they stay hidden after the bootstrap Show/Hide dance
+            try:
+                self._hide_popup_native()
+                self._hide_main_native()
+            except Exception:
+                pass
+            print("[desktop] ready — use tray: 快捷面板 / 打开主窗口")
+
+        self.main_window.events.shown += on_shown
+
         webview.start(debug=False)
-
         return 0
 
 
 def main():
-    app = DesktopApp()
-    return app.run()
+    return DesktopApp().run()
 
 
 if __name__ == "__main__":
