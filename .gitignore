@@ -7,13 +7,6 @@ __pycache__/
 venv/
 .env
 
-# Runtime data (user-specific)
-data/services.json
-data/manager.pid
-data/icons/*
-!data/icons/.gitkeep
-!data/.gitkeep
-
 # IDE / OS
 .idea/
 .vscode/
@@ -24,10 +17,7 @@ Thumbs.db
 # Build artifacts
 dist/
 build/
-build-onefile/
-
-# Playwright test artifacts
-.playwright-cli/
+*.spec.bak
 
 # Logs / temp
 *.log

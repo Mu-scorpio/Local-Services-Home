@@ -13,8 +13,10 @@ from backend.port_check import check_local_port
 from backend.process_info import (
     ProcessInfoError,
     discover_from_port,
+    invalidate_listen_cache,
     kill_port_processes,
     port_runtime_status,
+    ports_runtime_status,
 )
 from backend.process_runner import ScriptError, run_script
 from backend.scanner import scan_directory
@@ -109,17 +111,15 @@ def _save_raw(items: list[dict]) -> None:
     )
 
 
-def _enrich(item: dict) -> dict:
+def _enrich(item: dict, runtime: dict | None = None) -> dict:
     port = int(item.get("port") or 0)
-    runtime = port_runtime_status(port) if port else {
-        "running": False,
-        "pid": None,
-        "pids": [],
-        "process_name": None,
-    }
-    # Fallback if psutil unavailable
-    if not runtime.get("running") and port and check_local_port(port):
-        runtime["running"] = True
+    if runtime is None:
+        runtime = port_runtime_status(port) if port else {
+            "running": False,
+            "pid": None,
+            "pids": [],
+            "process_name": None,
+        }
 
     sid = item["id"]
     has_icon = icon_file_for(sid) is not None
@@ -135,7 +135,13 @@ def _enrich(item: dict) -> dict:
 
 
 def list_services() -> list[dict]:
-    return [_enrich(s) for s in _load_raw()]
+    items = _load_raw()
+    ports = [int(s.get("port") or 0) for s in items]
+    status_map = ports_runtime_status(ports)
+    return [
+        _enrich(s, status_map.get(int(s.get("port") or 0)))
+        for s in items
+    ]
 
 
 def get_service(service_id: str) -> dict | None:
@@ -269,6 +275,7 @@ def start_service(service_id: str, *, hidden: bool = False) -> dict:
     if not script or not directory:
         raise ScriptError("未配置启动脚本或服务目录，请先编辑服务并指定启动脚本")
     pid = run_script(directory, script, hidden=hidden)
+    invalidate_listen_cache()
     return {
         "ok": True,
         "pid": pid,
@@ -325,8 +332,6 @@ def service_status(service_id: str) -> dict:
         "pids": [],
         "process_name": None,
     }
-    if not runtime.get("running") and port and check_local_port(port):
-        runtime["running"] = True
     return {
         "id": service_id,
         "port": port,
@@ -335,17 +340,18 @@ def service_status(service_id: str) -> dict:
 
 
 def all_status() -> list[dict]:
+    items = _load_raw()
+    ports = [int(s.get("port") or 0) for s in items]
+    status_map = ports_runtime_status(ports)
     result = []
-    for s in _load_raw():
+    for s in items:
         port = int(s.get("port") or 0)
-        runtime = port_runtime_status(port) if port else {
+        runtime = status_map.get(port) or {
             "running": False,
             "pid": None,
             "pids": [],
             "process_name": None,
         }
-        if not runtime.get("running") and port and check_local_port(port):
-            runtime["running"] = True
         result.append({"id": s["id"], "port": port, **runtime})
     return result
 

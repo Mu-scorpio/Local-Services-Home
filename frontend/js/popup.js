@@ -1,14 +1,20 @@
 (() => {
   "use strict";
 
-  const POLL_MS = 4000;
+  const POLL_MS = 8000;
+  const POLL_MS_HIDDEN = 60000;
+  const THEME_POLL_MS = 15000;
   let services = [];
+  let pollTimer = null;
+  let themeTimer = null;
+  let pollInFlight = false;
+  let inited = false;
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const listEl = $("#service-list");
 
   // The popup is a separate pywebview window. Mirror the main page theme on
-  // load, on storage events, and through a small fallback poll for runtimes
+  // load, on storage events, and with a low-frequency fallback for runtimes
   // that isolate localStorage between windows.
   function applyTheme(theme) {
     const next = theme === "light" ? "light" : "dark";
@@ -32,7 +38,6 @@
     if (event.data?.type === "lsm-theme-change") applyTheme(event.data.theme);
   });
   window.addEventListener("lsm-theme-change", (event) => applyTheme(event.detail));
-  setInterval(syncThemeFromStorage, 750);
 
   // ---------- API ----------
   async function api(path, options = {}) {
@@ -78,8 +83,6 @@
       /* localStorage remains the fallback if the backend is unavailable */
     }
   }
-
-  setInterval(syncThemeFromServer, 750);
 
   // ---------- Toast ----------
   let toastEl = null;
@@ -147,6 +150,40 @@
   }
 
   // ---------- Data ----------
+  function isPageVisible() {
+    return document.visibilityState !== "hidden";
+  }
+
+  function pollIntervalMs() {
+    return isPageVisible() ? POLL_MS : POLL_MS_HIDDEN;
+  }
+
+  function stopTimers() {
+    if (pollTimer != null) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+    if (themeTimer != null) {
+      clearInterval(themeTimer);
+      themeTimer = null;
+    }
+  }
+
+  function startTimers() {
+    stopTimers();
+    const interval = pollIntervalMs();
+    pollTimer = setInterval(() => {
+      pollStatus();
+    }, interval);
+    // Theme only needs rare fallbacks; storage/message events cover live changes.
+    if (isPageVisible()) {
+      themeTimer = setInterval(() => {
+        syncThemeFromStorage();
+        syncThemeFromServer();
+      }, THEME_POLL_MS);
+    }
+  }
+
   async function loadServices() {
     try {
       services = await api("/api/services");
@@ -158,6 +195,8 @@
   }
 
   async function pollStatus() {
+    if (pollInFlight) return;
+    pollInFlight = true;
     try {
       const statuses = await api("/api/services/status");
       const map = Object.fromEntries(statuses.map((x) => [x.id, x]));
@@ -176,6 +215,8 @@
       else renderStats();
     } catch {
       /* ignore */
+    } finally {
+      pollInFlight = false;
     }
   }
 
@@ -263,9 +304,18 @@
 
   // ---------- Init ----------
   async function init() {
+    if (inited) return;
+    inited = true;
     await syncThemeFromServer();
     await loadServices();
-    setInterval(pollStatus, POLL_MS);
+    startTimers();
+    document.addEventListener("visibilitychange", () => {
+      startTimers();
+      if (isPageVisible()) {
+        syncThemeFromStorage();
+        pollStatus();
+      }
+    });
   }
 
   // Wait for pywebview API to be ready
@@ -275,7 +325,7 @@
     window.addEventListener("pywebviewready", init);
     // Fallback: init anyway after short delay (for browser mode)
     setTimeout(() => {
-      if (!services.length) init();
+      if (!inited) init();
     }, 500);
   }
 })();

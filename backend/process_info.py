@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -26,19 +28,22 @@ _SYSTEM_DIR_MARKERS = (
     "program files\\windowsapps",
 )
 
+# One net_connections() scan is expensive; share it across multi-port status checks.
+_LISTEN_CACHE_TTL = 1.5
+_listen_cache_lock = threading.Lock()
+_listen_cache_at = 0.0
+_listen_cache: dict[int, list[int]] = {}
+
 
 def _require_psutil() -> None:
     if psutil is None:
         raise ProcessInfoError("缺少依赖 psutil，请执行: python -m pip install psutil")
 
 
-def find_listener_pids(port: int) -> list[int]:
-    """Return PIDs that are LISTENing on the given TCP port."""
+def _collect_listen_map() -> dict[int, list[int]]:
+    """Build port → sorted listener PID list from a single net_connections pass."""
     _require_psutil()
-    if not port or port < 1 or port > 65535:
-        return []
-
-    pids: set[int] = set()
+    by_port: dict[int, set[int]] = {}
     try:
         conns = psutil.net_connections(kind="inet")
     except (psutil.AccessDenied, OSError):
@@ -55,13 +60,43 @@ def find_listener_pids(port: int) -> list[int]:
         try:
             if c.status != psutil.CONN_LISTEN:
                 continue
-            if not c.laddr or int(c.laddr.port) != int(port):
+            if not c.laddr:
                 continue
+            port = int(c.laddr.port)
             if c.pid and c.pid > 0:
-                pids.add(int(c.pid))
+                by_port.setdefault(port, set()).add(int(c.pid))
         except (AttributeError, TypeError, ValueError):
             continue
-    return sorted(pids)
+    return {port: sorted(pids) for port, pids in by_port.items()}
+
+
+def _get_listen_map(*, force: bool = False) -> dict[int, list[int]]:
+    global _listen_cache_at, _listen_cache
+    now = time.monotonic()
+    with _listen_cache_lock:
+        if not force and _listen_cache and (now - _listen_cache_at) < _LISTEN_CACHE_TTL:
+            return _listen_cache
+        _listen_cache = _collect_listen_map()
+        _listen_cache_at = now
+        return _listen_cache
+
+
+def invalidate_listen_cache() -> None:
+    """Drop cached listen map after start/stop so the next status is fresh."""
+    global _listen_cache_at, _listen_cache
+    with _listen_cache_lock:
+        _listen_cache_at = 0.0
+        _listen_cache = {}
+
+
+def find_listener_pids(port: int, *, use_cache: bool = True) -> list[int]:
+    """Return PIDs that are LISTENing on the given TCP port."""
+    _require_psutil()
+    if not port or port < 1 or port > 65535:
+        return []
+    if use_cache:
+        return list(_get_listen_map().get(int(port), []))
+    return list(_get_listen_map(force=True).get(int(port), []))
 
 
 def get_process_snapshot(pid: int) -> dict[str, Any]:
@@ -195,7 +230,8 @@ def discover_from_port(port: int) -> dict[str, Any]:
     Service must be running (port listening).
     """
     _require_psutil()
-    pids = find_listener_pids(port)
+    invalidate_listen_cache()
+    pids = find_listener_pids(port, use_cache=False)
     if not pids:
         raise ProcessInfoError(
             f"端口 {port} 当前没有监听进程。请先手动启动一次该服务，或改为手动选择目录。"
@@ -311,7 +347,8 @@ def kill_port_processes(port: int, *, include_children: bool = True) -> dict[str
     Returns details about what was killed.
     """
     _require_psutil()
-    pids = find_listener_pids(port)
+    invalidate_listen_cache()
+    pids = find_listener_pids(port, use_cache=False)
     if not pids:
         raise ProcessInfoError(f"端口 {port} 没有监听进程，服务可能已停止")
 
@@ -352,7 +389,8 @@ def kill_port_processes(port: int, *, include_children: bool = True) -> dict[str
         except psutil.Error as e:
             errors.append(f"PID {proc.pid} force kill: {e}")
 
-    still = find_listener_pids(port)
+    invalidate_listen_cache()
+    still = find_listener_pids(port, use_cache=False)
     return {
         "ok": len(still) == 0,
         "port": port,
@@ -367,21 +405,13 @@ def kill_port_processes(port: int, *, include_children: bool = True) -> dict[str
     }
 
 
-def port_runtime_status(port: int) -> dict[str, Any]:
-    """Status payload with optional PID metadata."""
-    if not port:
-        return {"running": False, "pid": None, "pids": [], "process_name": None}
-    try:
-        pids = find_listener_pids(port)
-    except ProcessInfoError:
-        from backend.port_check import check_local_port
+def _empty_runtime() -> dict[str, Any]:
+    return {"running": False, "pid": None, "pids": [], "process_name": None}
 
-        running = check_local_port(port)
-        return {"running": running, "pid": None, "pids": [], "process_name": None}
 
+def _runtime_from_pids(pids: list[int]) -> dict[str, Any]:
     if not pids:
-        return {"running": False, "pid": None, "pids": [], "process_name": None}
-
+        return _empty_runtime()
     name = None
     try:
         name = get_process_snapshot(pids[0]).get("name")
@@ -393,3 +423,63 @@ def port_runtime_status(port: int) -> dict[str, Any]:
         "pids": pids,
         "process_name": name,
     }
+
+
+def port_runtime_status(port: int) -> dict[str, Any]:
+    """Status payload with optional PID metadata."""
+    if not port:
+        return _empty_runtime()
+
+    # Cheap TCP probe first — skip process scan when port is closed.
+    from backend.port_check import check_local_port
+
+    if not check_local_port(port):
+        return _empty_runtime()
+
+    try:
+        pids = find_listener_pids(port)
+    except ProcessInfoError:
+        return {"running": True, "pid": None, "pids": [], "process_name": None}
+
+    if pids:
+        return _runtime_from_pids(pids)
+    # Port accepts connections but listener map missed it (permissions / race).
+    return {"running": True, "pid": None, "pids": [], "process_name": None}
+
+
+def ports_runtime_status(ports: list[int]) -> dict[int, dict[str, Any]]:
+    """
+    Batch status for many ports.
+
+    Uses one listen-map scan + per-port socket fallback only when needed,
+    instead of net_connections() once per service.
+    """
+    unique = sorted({int(p) for p in ports if p and 1 <= int(p) <= 65535})
+    result: dict[int, dict[str, Any]] = {0: _empty_runtime()}
+    if not unique:
+        return result
+
+    listen_map: dict[int, list[int]] = {}
+    try:
+        listen_map = _get_listen_map()
+    except ProcessInfoError:
+        listen_map = {}
+
+    from backend.port_check import check_local_port
+
+    for port in unique:
+        pids = list(listen_map.get(port, []))
+        if pids:
+            result[port] = _runtime_from_pids(pids)
+            continue
+        # Not in listen map — confirm with a fast local TCP probe.
+        if check_local_port(port):
+            result[port] = {
+                "running": True,
+                "pid": None,
+                "pids": [],
+                "process_name": None,
+            }
+        else:
+            result[port] = _empty_runtime()
+    return result

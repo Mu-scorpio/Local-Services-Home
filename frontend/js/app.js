@@ -1,10 +1,12 @@
 (() => {
   "use strict";
 
-  const POLL_MS = 5000;
+  const POLL_MS = 8000;
+  const POLL_MS_HIDDEN = 60000;
   let services = [];
   let pollTimer = null;
   let editingId = null;
+  let pollInFlight = false;
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const grid = $("#service-grid");
@@ -289,7 +291,31 @@
     }
   }
 
+  function isPageVisible() {
+    return document.visibilityState !== "hidden";
+  }
+
+  function pollIntervalMs() {
+    return isPageVisible() ? POLL_MS : POLL_MS_HIDDEN;
+  }
+
+  function stopPolling() {
+    if (pollTimer != null) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function startPolling() {
+    stopPolling();
+    pollTimer = setInterval(() => {
+      pollStatus();
+    }, pollIntervalMs());
+  }
+
   async function pollStatus() {
+    if (pollInFlight) return;
+    pollInFlight = true;
     try {
       const statuses = await api("/api/services/status");
       const map = Object.fromEntries(statuses.map((x) => [x.id, x]));
@@ -313,6 +339,8 @@
       else renderStats();
     } catch {
       /* ignore poll errors */
+    } finally {
+      pollInFlight = false;
     }
   }
 
@@ -702,7 +730,12 @@
     } catch (e) {
       toast("加载失败: " + e.message, "error");
     }
-    pollTimer = setInterval(pollStatus, POLL_MS);
+    startPolling();
+    document.addEventListener("visibilitychange", () => {
+      // Hidden main/popup WebViews still run JS — slow down hard when not visible.
+      startPolling();
+      if (isPageVisible()) pollStatus();
+    });
   }
 
   init();

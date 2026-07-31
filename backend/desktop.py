@@ -85,6 +85,9 @@ def _run_server():
         host=MANAGER_HOST,
         port=MANAGER_PORT,
         log_level="warning",
+        access_log=False,
+        limit_concurrency=32,
+        timeout_keep_alive=5,
     )
     server = uvicorn.Server(config)
     _server_started.set()
@@ -124,20 +127,28 @@ class DesktopApp:
     """Manages tray icon, popup window, and main window.
 
     Architecture:
-    - A hidden 'anchor' main window keeps webview.start() alive forever.
-    - The popup window is shown/hidden on tray click.
-    - The main window is shown/hidden on demand.
+    - A tiny hidden 'anchor' window keeps webview.start() alive forever.
+    - Main and popup windows are created lazily on first open (saves RAM/CPU
+      while the app sits in the tray with no UI open).
     - Quit via tray menu calls os._exit(0).
     """
 
+    # Minimal document — no polling, no heavy frontend while idle in tray.
+    _ANCHOR_HTML = (
+        "<!DOCTYPE html><html><head><meta charset='utf-8'>"
+        "<title>Local Services Home</title></head>"
+        "<body style='margin:0;background:#111'></body></html>"
+    )
+
     def __init__(self):
+        self.anchor_window = None
         self.main_window = None
         self.popup_window = None
         self.tray_icon = None
         self._popup_visible = False
         self._main_visible = False
-        self._quit_event = threading.Event()
-        self._started_event = threading.Event()
+        self._window_lock = threading.Lock()
+        self._api = self.Api(self)
 
     # ------ pywebview API class (exposed to JS) ------
     class Api:
@@ -176,14 +187,73 @@ class DesktopApp:
         y = screen_h - popup_h - 60
         return x, y, popup_w, popup_h
 
+    def _ensure_main_window(self):
+        """Create the full main window on first use."""
+        import webview
+
+        with self._window_lock:
+            if self.main_window is not None:
+                return self.main_window
+            main_url = f"http://{MANAGER_HOST}:{MANAGER_PORT}/"
+            self.main_window = webview.create_window(
+                title="本地服务管理",
+                url=main_url,
+                width=1100,
+                height=750,
+                min_size=(800, 550),
+                resizable=True,
+                fullscreen=False,
+                on_top=False,
+                hidden=True,
+            )
+
+            def on_main_closing():
+                self.hide_main_window()
+                return False
+
+            self.main_window.events.closing += on_main_closing
+            return self.main_window
+
+    def _ensure_popup_window(self):
+        """Create the compact popup window on first use."""
+        import webview
+
+        with self._window_lock:
+            if self.popup_window is not None:
+                return self.popup_window
+            popup_url = f"http://{MANAGER_HOST}:{MANAGER_PORT}/popup"
+            x, y, pw, ph = self._get_popup_position()
+            self.popup_window = webview.create_window(
+                title="服务管理",
+                url=popup_url,
+                width=pw,
+                height=ph,
+                x=x,
+                y=y,
+                resizable=False,
+                fullscreen=False,
+                on_top=True,
+                frameless=True,
+                hidden=True,
+                js_api=self._api,
+            )
+
+            def on_popup_closing():
+                self.hide_popup()
+                return False
+
+            self.popup_window.events.closing += on_popup_closing
+            return self.popup_window
+
     def show_main_window(self):
-        """Show the full-featured main window."""
-        if self.main_window:
-            self.main_window.show()
+        """Show the full-featured main window (lazy-create)."""
+        win = self._ensure_main_window()
+        if win:
+            win.show()
             self._main_visible = True
 
     def hide_main_window(self):
-        """Hide main window (keep alive as anchor)."""
+        """Hide main window (keep instance for fast re-open)."""
         if self.main_window:
             self.main_window.hide()
             self._main_visible = False
@@ -196,9 +266,10 @@ class DesktopApp:
             self.show_popup()
 
     def show_popup(self):
-        """Show the compact popup window."""
-        if self.popup_window:
-            self.popup_window.show()
+        """Show the compact popup window (lazy-create)."""
+        win = self._ensure_popup_window()
+        if win:
+            win.show()
             self._popup_visible = True
 
     def hide_popup(self):
@@ -209,7 +280,6 @@ class DesktopApp:
 
     def quit_app(self):
         """Quit the entire application."""
-        self._quit_event.set()
         if self.tray_icon:
             try:
                 self.tray_icon.stop()
@@ -269,59 +339,26 @@ class DesktopApp:
         tray_thread.start()
         time.sleep(0.3)
 
-        # --- Create windows BEFORE webview.start() ---
-
-        # 1. Main window (hidden anchor - keeps webview event loop alive)
-        main_url = f"http://{MANAGER_HOST}:{MANAGER_PORT}/"
-        self.main_window = webview.create_window(
-            title="本地服务管理",
-            url=main_url,
-            width=1100,
-            height=750,
-            min_size=(800, 550),
-            resizable=True,
-            fullscreen=False,
+        # Only a tiny anchor window at startup — no full WebUI until user opens UI.
+        # This is the main background RAM/CPU saving for tray-only use.
+        self.anchor_window = webview.create_window(
+            title="Local Services Home",
+            html=self._ANCHOR_HTML,
+            width=1,
+            height=1,
+            hidden=True,
             on_top=False,
-            hidden=True,  # Start hidden
         )
 
-        # 2. Popup window (visible on startup, near tray)
-        popup_url = f"http://{MANAGER_HOST}:{MANAGER_PORT}/popup"
-        x, y, pw, ph = self._get_popup_position()
-        self.popup_window = webview.create_window(
-            title="服务管理",
-            url=popup_url,
-            width=pw,
-            height=ph,
-            x=x,
-            y=y,
-            resizable=False,
-            fullscreen=False,
-            on_top=True,
-            frameless=True,
-            js_api=self.Api(self),
-        )
-        self._popup_visible = True
+        def on_anchor_closing():
+            # Never destroy the anchor; only quit via tray menu.
+            return False
 
-        print("[桌面模式] 启动完成，托盘图标已就绪。")
+        self.anchor_window.events.closing += on_anchor_closing
 
-        # --- Event handlers ---
-        # Main window: intercept close -> hide instead (keep anchor alive)
-        def on_main_closing():
-            self.hide_main_window()
-            return False  # Prevent actual close
+        print("[桌面模式] 启动完成，托盘图标已就绪（界面按需打开）。")
 
-        self.main_window.events.closing += on_main_closing
-
-        # Popup window: intercept close -> hide instead
-        def on_popup_closing():
-            self.hide_popup()
-            return False  # Prevent actual close
-
-        self.popup_window.events.closing += on_popup_closing
-
-        # --- Start webview event loop (blocks until all windows destroyed) ---
-        # Since we prevent closing, this only exits on os._exit() from quit_app
+        # Blocks until process exit (quit_app → os._exit).
         webview.start(debug=False)
 
         return 0
