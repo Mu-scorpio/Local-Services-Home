@@ -18,6 +18,12 @@
   const THEME_KEY = "lsm-theme";
   let storageSettings = null;
 
+  // ---------- Ports explorer ----------
+  let portGroups = [];
+  let portsProto = "all";
+  let portsLoaded = false;
+  let portsLoading = false;
+
   // ---------- Theme ----------
   function getTheme() {
     return document.documentElement.getAttribute("data-theme") === "light"
@@ -344,6 +350,158 @@
     }
   }
 
+  // ---------- Ports explorer ----------
+  function portsFilterText() {
+    return ($("#ports-filter")?.value || "").trim().toLowerCase();
+  }
+
+  function hideSystemPorts() {
+    return Boolean($("#ports-hide-system")?.checked);
+  }
+
+  function openAddFromBinding(group, binding) {
+    openModal(null);
+    $("#f-port").value = binding.port;
+    $("#f-webui").value = `http://127.0.0.1:${binding.port}/`;
+    if (group.folder) {
+      $("#f-directory").value = group.folder;
+      $("#f-directory").readOnly = true;
+    }
+    const pname = (group.process_name || "").replace(/\.exe$/i, "");
+    if (pname) $("#f-name").value = pname;
+    // Auto-discover scripts when possible
+    setTimeout(() => {
+      discoverFromPort();
+    }, 50);
+  }
+
+  function renderPorts() {
+    const placeholder = $("#ports-placeholder");
+    const grid = $("#ports-grid");
+    const meta = $("#ports-meta");
+    if (!grid) return;
+
+    if (!portsLoaded) {
+      if (placeholder) placeholder.hidden = false;
+      grid.hidden = true;
+      if (meta) meta.textContent = "点击扫描查看本机占用";
+      return;
+    }
+
+    if (placeholder) placeholder.hidden = true;
+    grid.hidden = false;
+
+    const q = portsFilterText();
+    let groups = portGroups.slice();
+    if (q) {
+      groups = groups.filter((g) => {
+        const blob = [
+          g.process_name,
+          g.folder,
+          g.cwd,
+          g.exe,
+          String(g.pid || ""),
+          ...(g.bindings || []).map((b) => `${b.protocol} ${b.port} ${b.display}`),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return blob.includes(q);
+      });
+    }
+
+    const bindingCount = groups.reduce((n, g) => n + (g.bindings?.length || 0), 0);
+    if (meta) {
+      meta.textContent = `${groups.length} 个进程 · ${bindingCount} 个绑定`;
+    }
+
+    if (!groups.length) {
+      grid.innerHTML = `<div class="ports-empty-filter">没有匹配的监听端口</div>`;
+      return;
+    }
+
+    grid.innerHTML = groups
+      .map((g, gi) => {
+        const folder = g.folder || g.cwd || g.exe || "";
+        const sub = g.pid
+          ? `PID ${g.pid}${folder ? " · " + folder : ""}`
+          : folder || "系统 / 未知进程";
+        const chips = (g.bindings || [])
+          .map((b, bi) => {
+            const cls = [
+              "binding-chip",
+              b.protocol === "udp" ? "udp" : "tcp",
+              b.managed ? "managed" : "",
+            ]
+              .filter(Boolean)
+              .join(" ");
+            const title = b.managed
+              ? `已登记为「${b.managed_name || "服务"}」· 点击重新添加/查看`
+              : `点击添加为服务 · ${b.protocol.toUpperCase()} ${b.display}`;
+            return `<button type="button" class="${cls}" data-g="${gi}" data-b="${bi}" title="${escapeAttr(title)}">
+              <span class="proto-tag">${escapeHtml((b.protocol || "tcp").toUpperCase())}</span>
+              <span>${escapeHtml(String(b.display))}</span>
+              ${b.managed ? '<span class="managed-dot" aria-hidden="true"></span>' : ""}
+            </button>`;
+          })
+          .join("");
+        return `<article class="ports-group" data-gi="${gi}">
+          <div class="ports-group-head">
+            <div style="min-width:0;flex:1">
+              <h3 class="ports-group-name">${escapeHtml(g.process_name || "unknown")}</h3>
+              <p class="ports-group-sub" title="${escapeAttr(sub)}">${escapeHtml(sub)}</p>
+            </div>
+          </div>
+          <div class="ports-bindings">${chips}</div>
+        </article>`;
+      })
+      .join("");
+  }
+
+  async function loadPorts({ silent = false } = {}) {
+    if (portsLoading) return;
+    portsLoading = true;
+    const btn = $("#btn-ports-scan");
+    const refreshBtn = $("#btn-ports-refresh");
+    const prev = btn?.textContent;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "扫描中…";
+    }
+    if (refreshBtn) refreshBtn.disabled = true;
+    try {
+      const hide = hideSystemPorts();
+      const qs = new URLSearchParams({
+        protocol: portsProto,
+        hide_system: hide ? "true" : "false",
+      });
+      const data = await api(`/api/ports/listeners?${qs}`);
+      portGroups = data.groups || [];
+      portsLoaded = true;
+      renderPorts();
+      if (!silent) {
+        toast(
+          `已扫描 ${data.group_count || 0} 个进程 · ${data.binding_count || 0} 个监听`,
+          "success"
+        );
+      }
+    } catch (e) {
+      if (!silent) toast(e.message, "error");
+    } finally {
+      portsLoading = false;
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = prev || "扫描本机端口";
+      }
+      if (refreshBtn) refreshBtn.disabled = false;
+    }
+  }
+
+  function scrollToPorts() {
+    const el = $("#ports-panel");
+    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
   // ---------- Modal ----------
   function fillSelect(select, options, selected, emptyLabel = "— 未选择 —") {
     const all = new Set(options.filter(Boolean));
@@ -593,9 +751,64 @@
   // ---------- Events ----------
   $("#btn-add").addEventListener("click", () => openModal());
   $("#btn-add-empty").addEventListener("click", () => openModal());
+  $("#btn-ports")?.addEventListener("click", () => {
+    scrollToPorts();
+    if (!portsLoaded) loadPorts();
+    else loadPorts({ silent: true });
+  });
+  $("#btn-ports-scan")?.addEventListener("click", () => loadPorts());
+  $("#btn-ports-refresh")?.addEventListener("click", () => loadPorts());
+  $("#ports-hide-system")?.addEventListener("change", () => {
+    if (portsLoaded) loadPorts({ silent: true });
+  });
+  $("#ports-filter")?.addEventListener("input", () => {
+    if (portsLoaded) renderPorts();
+  });
+  document.querySelectorAll(".ports-chip[data-proto]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      portsProto = btn.getAttribute("data-proto") || "all";
+      document.querySelectorAll(".ports-chip[data-proto]").forEach((b) => {
+        b.classList.toggle("active", b === btn);
+      });
+      if (portsLoaded) loadPorts({ silent: true });
+    });
+  });
+  $("#ports-grid")?.addEventListener("click", (e) => {
+    const chip = e.target.closest(".binding-chip");
+    if (!chip) return;
+    // Filter may have re-indexed — resolve from current rendered filtered list
+    const q = portsFilterText();
+    let groups = portGroups.slice();
+    if (q) {
+      groups = groups.filter((g) => {
+        const blob = [
+          g.process_name,
+          g.folder,
+          g.cwd,
+          g.exe,
+          String(g.pid || ""),
+          ...(g.bindings || []).map((b) => `${b.protocol} ${b.port} ${b.display}`),
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        return blob.includes(q);
+      });
+    }
+    const gi = Number(chip.dataset.g);
+    const bi = Number(chip.dataset.b);
+    const group = groups[gi];
+    const binding = group?.bindings?.[bi];
+    if (!group || !binding) return;
+    if (binding.protocol === "udp") {
+      toast("UDP 端口一般不是 WebUI，已填入端口供参考", "info");
+    }
+    openAddFromBinding(group, binding);
+  });
   $("#btn-refresh").addEventListener("click", async () => {
     try {
       await loadServices();
+      if (portsLoaded) await loadPorts({ silent: true });
       toast("已刷新", "success");
     } catch (e) {
       toast(e.message, "error");

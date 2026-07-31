@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <title>本地服务管理 - 添加服务</title>
+  <link rel="stylesheet" href="/frontend/css/style.css" />
+  <style>
+    body { min-height: 100vh; }
+    .modal-overlay { display: flex !important; position: fixed; inset: 0; }
+    .modal-overlay[hidden] { display: flex !important; }
+  </style>
+</head>
+<body>
+  <div class="app" style="filter: blur(2px); opacity: 0.45; pointer-events: none;">
+    <header class="header">
+      <div class="header-left">
+        <div class="logo"><span style="font-size:1.2rem">⌂</span></div>
+        <div>
+          <h1>本地服务管理</h1>
+          <p class="subtitle">统一管理 127.0.0.1 上的 WebUI 服务</p>
+        </div>
+      </div>
+    </header>
+  </div>
+
+  <div class="modal-overlay">
+    <div class="modal" role="dialog">
+      <div class="modal-header">
+        <h2>添加服务</h2>
+        <button type="button" class="icon-btn">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="row-2">
+          <label class="field">
+            <span>端口 <em>*</em></span>
+            <div class="row">
+              <input type="number" value="8787" readonly />
+              <button type="button" class="btn btn-primary">从端口探测</button>
+            </div>
+            <small class="hint">服务运行中时，可只填端口 → 探测，自动识别目录与启动脚本</small>
+          </label>
+          <label class="field">
+            <span>WebUI 地址</span>
+            <input type="url" value="http://127.0.0.1:8787/" readonly />
+          </label>
+        </div>
+        <label class="field">
+          <span>名称</span>
+          <input type="text" value="hermes-webui" readonly />
+        </label>
+        <label class="field">
+          <span>服务目录</span>
+          <div class="row">
+            <input type="text" value="D:\Projects\hermes-webui" readonly />
+            <button type="button" class="btn btn-ghost">选择文件夹</button>
+          </div>
+        </label>
+        <div class="scan-result">
+          探测成功：进程 <strong>python.exe</strong> (PID 22012) · 目录
+          <strong>D:\Projects\hermes-webui</strong>
+          · 启动脚本 <strong>start.ps1</strong>
+        </div>
+        <div class="modal-footer">
+          <div class="spacer"></div>
+          <button type="button" class="btn btn-ghost">取消</button>
+          <button type="button" class="btn btn-primary">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

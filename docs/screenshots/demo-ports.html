@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <title>本地服务管理 - 端口探测</title>
+  <link rel="stylesheet" href="/frontend/css/style.css" />
+  <style>body { min-height: 100vh; } .app { padding-bottom: 36px; }</style>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-left">
+        <div class="logo">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5z"/>
+          </svg>
+        </div>
+        <div>
+          <h1>本地服务管理</h1>
+          <p class="subtitle">统一管理 127.0.0.1 上的 WebUI 服务</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button type="button" class="btn btn-ghost">端口探测</button>
+        <button type="button" class="btn btn-primary">添加服务</button>
+      </div>
+    </header>
+
+    <section class="ports-panel">
+      <div class="ports-header">
+        <div class="ports-title-row">
+          <h2>本地监听端口</h2>
+          <button type="button" class="icon-btn ports-refresh">↻</button>
+          <span class="ports-meta">8 个进程 · 24 个绑定</span>
+        </div>
+        <div class="ports-toolbar">
+          <div class="ports-proto">
+            <button type="button" class="ports-chip active">全部</button>
+            <button type="button" class="ports-chip">TCP</button>
+            <button type="button" class="ports-chip">UDP</button>
+          </div>
+          <label class="ports-hide-system">
+            <input type="checkbox" checked /> 隐藏系统进程
+          </label>
+          <div class="ports-search-wrap">
+            <input type="search" value="" placeholder="过滤进程 / 端口…" readonly />
+          </div>
+        </div>
+      </div>
+      <div class="ports-grid">
+        <article class="ports-group">
+          <div class="ports-group-head">
+            <div style="min-width:0;flex:1">
+              <h3 class="ports-group-name">python.exe</h3>
+              <p class="ports-group-sub">PID 22012 · D:\Projects\hermes-webui</p>
+            </div>
+          </div>
+          <div class="ports-bindings">
+            <button type="button" class="binding-chip tcp managed"><span class="proto-tag">TCP</span><span>8787</span><span class="managed-dot"></span></button>
+            <button type="button" class="binding-chip tcp"><span class="proto-tag">TCP</span><span>8998</span></button>
+          </div>
+        </article>
+        <article class="ports-group">
+          <div class="ports-group-head">
+            <div style="min-width:0;flex:1">
+              <h3 class="ports-group-name">postgres.exe</h3>
+              <p class="ports-group-sub">PID 4412 · C:\Program Files\PostgreSQL\16\bin</p>
+            </div>
+          </div>
+          <div class="ports-bindings">
+            <button type="button" class="binding-chip tcp"><span class="proto-tag">TCP</span><span>5432</span></button>
+            <button type="button" class="binding-chip tcp"><span class="proto-tag">TCP</span><span>5433</span></button>
+          </div>
+        </article>
+        <article class="ports-group">
+          <div class="ports-group-head">
+            <div style="min-width:0;flex:1">
+              <h3 class="ports-group-name">redis-server.exe</h3>
+              <p class="ports-group-sub">PID 6620 · D:\redis</p>
+            </div>
+          </div>
+          <div class="ports-bindings">
+            <button type="button" class="binding-chip tcp"><span class="proto-tag">TCP</span><span>6379</span></button>
+          </div>
+        </article>
+        <article class="ports-group">
+          <div class="ports-group-head">
+            <div style="min-width:0;flex:1">
+              <h3 class="ports-group-name">node.exe</h3>
+              <p class="ports-group-sub">PID 18240 · D:\SillyTavern</p>
+            </div>
+          </div>
+          <div class="ports-bindings">
+            <button type="button" class="binding-chip tcp managed"><span class="proto-tag">TCP</span><span>8000</span><span class="managed-dot"></span></button>
+          </div>
+        </article>
+        <article class="ports-group">
+          <div class="ports-group-head">
+            <div style="min-width:0;flex:1">
+              <h3 class="ports-group-name">cpa-usage-keeper.exe</h3>
+              <p class="ports-group-sub">PID 16876 · C:\Users\…\CLIProxyAPI\usage-keeper</p>
+            </div>
+          </div>
+          <div class="ports-bindings">
+            <button type="button" class="binding-chip tcp"><span class="proto-tag">TCP</span><span>8081</span></button>
+          </div>
+        </article>
+        <article class="ports-group">
+          <div class="ports-group-head">
+            <div style="min-width:0;flex:1">
+              <h3 class="ports-group-name">wpscloudsvr.exe</h3>
+              <p class="ports-group-sub">PID 25056 · D:\Application\WPS Office\…</p>
+            </div>
+          </div>
+          <div class="ports-bindings">
+            <button type="button" class="binding-chip tcp"><span class="proto-tag">TCP</span><span>3660</span></button>
+            <button type="button" class="binding-chip tcp"><span class="proto-tag">TCP</span><span>4709</span></button>
+          </div>
+        </article>
+      </div>
+    </section>
+  </div>
+</body>
+</html>

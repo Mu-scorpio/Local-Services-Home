@@ -748,6 +748,270 @@ input[readonly] {
   color: var(--success);
 }
 
+/* ========== Local ports explorer ========== */
+.ports-panel {
+  margin: 0 0 28px;
+  padding: 16px 18px 18px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.02) inset;
+  transition: var(--transition-theme);
+}
+
+.ports-header {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.ports-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.ports-title-row h2 {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+}
+
+.ports-refresh {
+  width: 32px;
+  height: 32px;
+  font-size: 1.1rem;
+  line-height: 1;
+  color: var(--text-muted);
+}
+
+.ports-refresh:hover {
+  color: var(--primary);
+}
+
+.ports-meta {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  margin-left: auto;
+}
+
+.ports-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.ports-proto {
+  display: inline-flex;
+  gap: 0;
+  padding: 3px;
+  border-radius: 11px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.ports-chip {
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 8px;
+  padding: 0.35rem 0.85rem;
+  cursor: pointer;
+  font-size: 0.8rem;
+  font-weight: 650;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ports-chip:hover {
+  color: var(--text);
+}
+
+.ports-chip.active {
+  background: #3ecf8e;
+  color: #0b1a14;
+}
+
+html[data-theme="light"] .ports-chip.active {
+  background: #0f9f6e;
+  color: #fff;
+}
+
+.ports-hide-system {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ports-hide-system input {
+  accent-color: var(--primary);
+}
+
+.ports-search-wrap {
+  margin-left: auto;
+  min-width: 180px;
+  flex: 1 1 200px;
+  max-width: 280px;
+}
+
+.ports-search-wrap input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+  padding: 0.45rem 0.75rem;
+  font-size: 0.85rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.ports-search-wrap input:focus {
+  border-color: var(--primary-border);
+}
+
+.ports-placeholder {
+  text-align: center;
+  padding: 28px 16px 20px;
+  color: var(--text-muted);
+}
+
+.ports-placeholder p {
+  margin: 0 0 14px;
+  font-size: 0.9rem;
+  max-width: 420px;
+  margin-inline: auto;
+  line-height: 1.55;
+}
+
+.ports-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.ports-group {
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.ports-group:hover {
+  border-color: var(--border);
+  background: var(--bg-card-hover);
+}
+
+.ports-group-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ports-group-name {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 650;
+  word-break: break-all;
+}
+
+.ports-group-sub {
+  margin: 2px 0 0;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+
+.ports-group-sub[title] {
+  cursor: default;
+}
+
+.ports-bindings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.binding-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  padding: 0.28rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: ui-monospace, "Cascadia Code", Consolas, monospace;
+  color: var(--success);
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s, transform 0.08s;
+}
+
+.binding-chip:hover {
+  border-color: var(--success-border);
+  background: var(--success-soft);
+  transform: translateY(-1px);
+}
+
+.binding-chip.tcp {
+  color: var(--success);
+}
+
+.binding-chip.udp {
+  color: var(--warning);
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--border));
+}
+
+.binding-chip.udp:hover {
+  border-color: color-mix(in srgb, var(--warning) 55%, transparent);
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+}
+
+.binding-chip.managed {
+  color: var(--primary);
+  border-color: var(--primary-border);
+  background: var(--primary-soft);
+}
+
+.binding-chip .proto-tag {
+  font-size: 0.65rem;
+  font-weight: 750;
+  letter-spacing: 0.04em;
+  opacity: 0.85;
+}
+
+.binding-chip .managed-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--primary);
+}
+
+.ports-empty-filter {
+  grid-column: 1 / -1;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  padding: 20px;
+}
+
 /* Toast */
 .toast-host {
   position: fixed;

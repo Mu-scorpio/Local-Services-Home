@@ -44,6 +44,7 @@
             <span class="icon" aria-hidden="true">☾</span> 夜间
           </button>
         </div>
+        <button type="button" class="btn btn-ghost" id="btn-ports" title="扫描本机正在监听的端口">端口探测</button>
         <button type="button" class="btn btn-ghost" id="btn-refresh" title="刷新状态">刷新</button>
         <button type="button" class="btn btn-primary" id="btn-add">添加服务</button>
       </div>
@@ -83,6 +84,38 @@
         <div class="stat-card">
           <span class="stat-label">已停止</span>
           <span class="stat-value stopped" id="stat-stopped">0</span>
+        </div>
+      </section>
+
+      <!-- Local listening ports explorer -->
+      <section class="ports-panel" id="ports-panel" aria-labelledby="ports-title">
+        <div class="ports-header">
+          <div class="ports-title-row">
+            <h2 id="ports-title">本地监听端口</h2>
+            <button type="button" class="icon-btn ports-refresh" id="btn-ports-refresh" title="重新扫描" aria-label="重新扫描">↻</button>
+            <span class="ports-meta" id="ports-meta">点击扫描查看本机占用</span>
+          </div>
+          <div class="ports-toolbar">
+            <div class="ports-proto" role="group" aria-label="协议筛选">
+              <button type="button" class="ports-chip active" data-proto="all">全部</button>
+              <button type="button" class="ports-chip" data-proto="tcp">TCP</button>
+              <button type="button" class="ports-chip" data-proto="udp">UDP</button>
+            </div>
+            <label class="ports-hide-system">
+              <input type="checkbox" id="ports-hide-system" checked />
+              隐藏系统进程
+            </label>
+            <div class="ports-search-wrap">
+              <input type="search" id="ports-filter" placeholder="过滤进程 / 端口…" autocomplete="off" />
+            </div>
+          </div>
+        </div>
+        <div class="ports-body" id="ports-body">
+          <div class="ports-placeholder" id="ports-placeholder">
+            <p>不知道本机还有哪些 WebUI 在跑？扫描监听端口，按进程分组显示，一键添加为服务。</p>
+            <button type="button" class="btn btn-primary" id="btn-ports-scan">扫描本机端口</button>
+          </div>
+          <div class="ports-grid" id="ports-grid" hidden></div>
         </div>
       </section>
 

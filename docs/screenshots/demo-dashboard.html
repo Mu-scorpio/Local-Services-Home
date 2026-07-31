@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>本地服务管理 - 仪表盘</title>
+  <link rel="stylesheet" href="/frontend/css/style.css" />
+  <style>body { min-height: 100vh; } .app { padding-bottom: 40px; }</style>
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="header-left">
+        <div class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8">
+            <path d="M4 10.5L12 4l8 6.5V20a1 1 0 0 1-1 1h-5v-6H10v6H5a1 1 0 0 1-1-1v-9.5z"/>
+          </svg>
+        </div>
+        <div>
+          <h1>本地服务管理</h1>
+          <p class="subtitle">统一管理 127.0.0.1 上的 WebUI 服务</p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="theme-toggle">
+          <button type="button">☀ 白天</button>
+          <button type="button" class="active">☾ 夜间</button>
+        </div>
+        <button type="button" class="btn btn-ghost">端口探测</button>
+        <button type="button" class="btn btn-ghost">刷新</button>
+        <button type="button" class="btn btn-primary">添加服务</button>
+      </div>
+    </header>
+
+    <section class="stats">
+      <div class="stat-card">
+        <span class="stat-label">服务总数</span>
+        <span class="stat-value">5</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">运行中</span>
+        <span class="stat-value running">3</span>
+      </div>
+      <div class="stat-card">
+        <span class="stat-label">已停止</span>
+        <span class="stat-value stopped">2</span>
+      </div>
+    </section>
+
+    <section class="grid">
+      <article class="card">
+        <div class="card-top">
+          <div class="card-icon"><span class="default-icon">◈</span></div>
+          <div class="card-meta">
+            <div class="card-title-row">
+              <h3 class="card-title">SillyTavern</h3>
+              <span class="badge badge-running">运行中</span>
+            </div>
+          </div>
+        </div>
+        <div class="card-info">
+          <div class="row-line"><span class="label">端口</span><span class="value">8000</span></div>
+          <div class="row-line"><span class="label">进程</span><span class="value">node.exe · PID 18240</span></div>
+          <div class="row-line"><span class="label">WebUI</span><span class="value">http://127.0.0.1:8000/</span></div>
+          <div class="row-line"><span class="label">目录</span><span class="value">D:\SillyTavern</span></div>
+        </div>
+        <div class="card-actions">
+          <button type="button" class="btn btn-sm btn-ghost">打开</button>
+          <button type="button" class="btn btn-sm btn-success" disabled>启动</button>
+          <button type="button" class="btn btn-sm btn-success" disabled>无窗口</button>
+          <button type="button" class="btn btn-sm btn-danger">停止</button>
+        </div>
+      </article>
+      <article class="card">
+        <div class="card-top">
+          <div class="card-icon"><span class="default-icon">◈</span></div>
+          <div class="card-meta">
+            <div class="card-title-row">
+              <h3 class="card-title">hermes-webui</h3>
+              <span class="badge badge-running">运行中</span>
+            </div>
+          </div>
+        </div>
+        <div class="card-info">
+          <div class="row-line"><span class="label">端口</span><span class="value">8787</span></div>
+          <div class="row-line"><span class="label">进程</span><span class="value">python.exe · PID 22012</span></div>
+          <div class="row-line"><span class="label">WebUI</span><span class="value">http://127.0.0.1:8787/</span></div>
+          <div class="row-line"><span class="label">目录</span><span class="value">D:\Projects\hermes-webui</span></div>
+        </div>
+        <div class="card-actions">
+          <button type="button" class="btn btn-sm btn-ghost">打开</button>
+          <button type="button" class="btn btn-sm btn-success" disabled>启动</button>
+          <button type="button" class="btn btn-sm btn-success" disabled>无窗口</button>
+          <button type="button" class="btn btn-sm btn-danger">停止</button>
+        </div>
+      </article>
+      <article class="card">
+        <div class="card-top">
+          <div class="card-icon"><span class="default-icon">◈</span></div>
+          <div class="card-meta">
+            <div class="card-title-row">
+              <h3 class="card-title">cpa</h3>
+              <span class="badge badge-running">运行中</span>
+            </div>
+          </div>
+        </div>
+        <div class="card-info">
+          <div class="row-line"><span class="label">端口</span><span class="value">8317</span></div>
+          <div class="row-line"><span class="label">进程</span><span class="value">cli-proxy-api.exe · PID 17680</span></div>
+          <div class="row-line"><span class="label">WebUI</span><span class="value">http://127.0.0.1:8317/</span></div>
+          <div class="row-line"><span class="label">目录</span><span class="value">C:\Users\…\CLIProxyAPI</span></div>
+        </div>
+        <div class="card-actions">
+          <button type="button" class="btn btn-sm btn-ghost">打开</button>
+          <button type="button" class="btn btn-sm btn-success" disabled>启动</button>
+          <button type="button" class="btn btn-sm btn-success" disabled>无窗口</button>
+          <button type="button" class="btn btn-sm btn-danger">停止</button>
+        </div>
+      </article>
+      <article class="card">
+        <div class="card-top">
+          <div class="card-icon"><span class="default-icon">◈</span></div>
+          <div class="card-meta">
+            <div class="card-title-row">
+              <h3 class="card-title">MediaCMS</h3>
+              <span class="badge badge-stopped">已停止</span>
+            </div>
+          </div>
+        </div>
+        <div class="card-info">
+          <div class="row-line"><span class="label">端口</span><span class="value">8999</span></div>
+          <div class="row-line"><span class="label">进程</span><span class="value">—</span></div>
+          <div class="row-line"><span class="label">WebUI</span><span class="value">http://127.0.0.1:8999/</span></div>
+          <div class="row-line"><span class="label">目录</span><span class="value">E:\MediaCMS</span></div>
+        </div>
+        <div class="card-actions">
+          <button type="button" class="btn btn-sm btn-ghost">打开</button>
+          <button type="button" class="btn btn-sm btn-success">启动</button>
+          <button type="button" class="btn btn-sm btn-success">无窗口</button>
+          <button type="button" class="btn btn-sm btn-danger" disabled>停止</button>
+        </div>
+      </article>
+    </section>
+  </div>
+</body>
+</html>

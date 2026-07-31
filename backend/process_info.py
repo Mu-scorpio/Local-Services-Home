@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import socket
 import sys
 import threading
 import time
@@ -483,3 +484,193 @@ def ports_runtime_status(ports: list[int]) -> dict[int, dict[str, Any]]:
         else:
             result[port] = _empty_runtime()
     return result
+
+
+# Common Windows system / noise processes (hide by default in explorer UI).
+_SYSTEM_PROCESS_NAMES = frozenset(
+    {
+        "system",
+        "idle",
+        "registry",
+        "smss.exe",
+        "csrss.exe",
+        "wininit.exe",
+        "services.exe",
+        "lsass.exe",
+        "svchost.exe",
+        "svchost",
+        "fontdrvhost.exe",
+        "dwm.exe",
+        "winlogon.exe",
+        "spoolsv.exe",
+        "memory compression",
+        "system idle process",
+        "secure system",
+    }
+)
+
+
+def _format_listen_address(ip: str | None, port: int) -> str:
+    if not ip or ip in ("0.0.0.0", "::", "::0", "*"):
+        return str(port)
+    # IPv6 needs brackets when combined with port
+    if ":" in ip and not ip.startswith("["):
+        return f"[{ip}]:{port}"
+    return f"{ip}:{port}"
+
+
+def _is_loopback_or_any(ip: str | None) -> bool:
+    if not ip or ip in ("0.0.0.0", "::", "::0", "*"):
+        return True
+    if ip.startswith("127.") or ip in ("::1",):
+        return True
+    # link-local often used by Windows services
+    if ip.startswith("169.254."):
+        return True
+    return False
+
+
+def list_listening_ports(
+    *,
+    protocol: str = "all",
+    hide_system: bool = True,
+    local_only: bool = False,
+) -> dict[str, Any]:
+    """
+    Snapshot of local listening sockets, grouped by process.
+
+    Inspired by FRP-style local port explorers: process card + protocol chips.
+    """
+    _require_psutil()
+    proto_filter = (protocol or "all").strip().lower()
+    if proto_filter not in {"all", "tcp", "udp"}:
+        proto_filter = "all"
+
+    # kind=inet covers IPv4+IPv6 TCP/UDP
+    try:
+        conns = psutil.net_connections(kind="inet")
+    except (psutil.AccessDenied, OSError):
+        conns = []
+        for proc in psutil.process_iter(["pid"]):
+            try:
+                for c in proc.connections(kind="inet"):
+                    conns.append(c)
+            except (psutil.Error, OSError):
+                continue
+
+    # (pid) -> list of binding dicts
+    by_pid: dict[int, list[dict[str, Any]]] = {}
+    total_raw = 0
+
+    for c in conns:
+        try:
+            status = getattr(c, "status", None)
+            sock_type = getattr(c, "type", None)
+            # TCP must be LISTEN; UDP has no listen state — bound datagram sockets count.
+            if sock_type == socket.SOCK_STREAM:
+                if status != psutil.CONN_LISTEN:
+                    continue
+                proto = "tcp"
+            elif sock_type == socket.SOCK_DGRAM:
+                proto = "udp"
+            elif status == psutil.CONN_LISTEN:
+                proto = "tcp"
+            else:
+                continue
+
+            if proto_filter != "all" and proto != proto_filter:
+                continue
+            if not c.laddr:
+                continue
+            port = int(c.laddr.port)
+            ip = getattr(c.laddr, "ip", None) or ""
+            if local_only and not _is_loopback_or_any(str(ip)):
+                continue
+            pid = int(c.pid) if c.pid and c.pid > 0 else 0
+            total_raw += 1
+            entry = {
+                "protocol": proto,
+                "port": port,
+                "address": str(ip) if ip else "0.0.0.0",
+                "display": _format_listen_address(str(ip) if ip else None, port),
+            }
+            by_pid.setdefault(pid, []).append(entry)
+        except (AttributeError, TypeError, ValueError, OSError):
+            continue
+
+    groups: list[dict[str, Any]] = []
+    for pid, bindings in by_pid.items():
+        name = "unknown"
+        exe = None
+        cwd = None
+        if pid > 0:
+            try:
+                snap = get_process_snapshot(pid)
+                name = snap.get("name") or name
+                exe = snap.get("exe")
+                cwd = snap.get("cwd")
+            except ProcessInfoError:
+                try:
+                    name = psutil.Process(pid).name()
+                except psutil.Error:
+                    name = f"pid-{pid}"
+
+        stem = (name or "").lower()
+        if not stem.endswith(".exe") and "." not in stem:
+            # normalize bare names
+            pass
+        is_system = stem in _SYSTEM_PROCESS_NAMES or stem.replace(".exe", "") + ".exe" in _SYSTEM_PROCESS_NAMES
+        if hide_system and is_system:
+            continue
+
+        # Deduplicate bindings (same proto+port+address)
+        seen: set[tuple] = set()
+        unique_bindings: list[dict[str, Any]] = []
+        for b in bindings:
+            key = (b["protocol"], b["port"], b["address"])
+            if key in seen:
+                continue
+            seen.add(key)
+            unique_bindings.append(b)
+        unique_bindings.sort(key=lambda x: (x["protocol"], x["port"], x["address"]))
+
+        folder = None
+        if cwd:
+            folder = cwd
+        elif exe:
+            try:
+                folder = str(Path(exe).parent)
+            except OSError:
+                folder = None
+
+        groups.append(
+            {
+                "process_name": name,
+                "pid": pid or None,
+                "exe": exe,
+                "cwd": cwd,
+                "folder": folder,
+                "is_system": is_system,
+                "bindings": unique_bindings,
+                "port_count": len(unique_bindings),
+            }
+        )
+
+    # Sort: non-system first, more ports first, then name
+    groups.sort(
+        key=lambda g: (
+            1 if g.get("is_system") else 0,
+            -int(g.get("port_count") or 0),
+            (g.get("process_name") or "").lower(),
+            g.get("pid") or 0,
+        )
+    )
+
+    return {
+        "ok": True,
+        "protocol": proto_filter,
+        "hide_system": hide_system,
+        "group_count": len(groups),
+        "binding_count": sum(g["port_count"] for g in groups),
+        "groups": groups,
+    }

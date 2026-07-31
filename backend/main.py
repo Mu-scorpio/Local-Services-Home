@@ -17,7 +17,7 @@ from backend.config import (
     set_theme,
 )
 from backend.folder_picker import FolderPickCancelled, FolderPickError, pick_folder
-from backend.process_info import ProcessInfoError
+from backend.process_info import ProcessInfoError, list_listening_ports
 from backend.process_runner import ScriptError
 from backend.scanner import scan_directory
 from backend.services import (
@@ -97,6 +97,45 @@ def api_update_theme_settings(body: ThemeSettingsUpdate):
 @app.get("/api/services")
 def api_list_services():
     return svc.list_services()
+
+
+@app.get("/api/ports/listeners")
+def api_port_listeners(
+    protocol: str = "all",
+    hide_system: bool = True,
+):
+    """List local listening TCP/UDP ports grouped by process (explorer view)."""
+    try:
+        data = list_listening_ports(protocol=protocol, hide_system=hide_system)
+    except ProcessInfoError as e:
+        raise HTTPException(status_code=500, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"扫描监听端口失败: {e}") from e
+
+    # Annotate which ports are already registered as managed services
+    registered: dict[int, dict] = {}
+    try:
+        for item in svc.list_services():
+            port = int(item.get("port") or 0)
+            if port:
+                registered[port] = {
+                    "id": item.get("id"),
+                    "name": item.get("name"),
+                    "running": bool(item.get("running")),
+                }
+    except Exception:
+        registered = {}
+
+    for group in data.get("groups") or []:
+        for binding in group.get("bindings") or []:
+            port = int(binding.get("port") or 0)
+            info = registered.get(port)
+            binding["managed"] = bool(info)
+            binding["managed_name"] = info.get("name") if info else None
+            binding["managed_id"] = info.get("id") if info else None
+
+    data["registered_ports"] = sorted(registered.keys())
+    return data
 
 
 @app.get("/api/services/status")
