@@ -25,7 +25,6 @@ from backend.services import (
     ScanRequest,
     ServiceCreate,
     ServiceUpdate,
-    StartRequest,
     StopRequest,
 )
 
@@ -202,10 +201,9 @@ def api_delete(service_id: str):
 
 
 @app.post("/api/services/{service_id}/start")
-def api_start(service_id: str, body: StartRequest | None = None):
-    hidden = body.hidden if body else False
+def api_start(service_id: str):
     try:
-        return svc.start_service(service_id, hidden=hidden)
+        return svc.start_service(service_id)
     except KeyError as e:
         raise HTTPException(status_code=404, detail=str(e)) from e
     except ScriptError as e:

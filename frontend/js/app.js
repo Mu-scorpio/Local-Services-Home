@@ -82,6 +82,12 @@
     return data;
   }
 
+  async function invokeWindowApi(method) {
+    const bridge = window.pywebview?.api;
+    if (!bridge || typeof bridge[method] !== "function") return null;
+    return bridge[method]();
+  }
+
   async function saveSharedTheme(theme) {
     try {
       await api("/api/settings/theme", {
@@ -181,7 +187,6 @@
         <div class="card-actions">
           <button type="button" class="btn btn-sm btn-ghost" data-action="open">打开</button>
           <button type="button" class="btn btn-sm btn-success" data-action="start" ${s.running ? "disabled" : ""}>启动</button>
-          <button type="button" class="btn btn-sm btn-success" data-action="start-hidden" ${s.running ? "disabled" : ""}>无窗口</button>
           <button type="button" class="btn btn-sm btn-danger" data-action="stop" ${!s.running ? "disabled" : ""}>停止</button>
           <button type="button" class="btn btn-sm btn-ghost" data-action="delete">删除</button>
         </div>
@@ -676,16 +681,6 @@
       if (action === "start") {
         const r = await api(`/api/services/${id}/start`, {
           method: "POST",
-          body: JSON.stringify({ hidden: false }),
-        });
-        toast(r.message || "已发送启动命令", "success");
-        setTimeout(pollStatus, 1500);
-        return;
-      }
-      if (action === "start-hidden") {
-        const r = await api(`/api/services/${id}/start`, {
-          method: "POST",
-          body: JSON.stringify({ hidden: true }),
         });
         toast(r.message || "已无窗口启动", "success");
         setTimeout(pollStatus, 1500);
@@ -931,6 +926,26 @@
   // ---------- Theme events ----------
   document.querySelectorAll("[data-theme-set]").forEach((btn) => {
     btn.addEventListener("click", () => setTheme(btn.getAttribute("data-theme-set")));
+  });
+
+  // ---------- Custom window title bar ----------
+  $("#btn-window-minimize").addEventListener("click", () => {
+    invokeWindowApi("minimize_main_window");
+  });
+
+  $("#btn-window-maximize").addEventListener("click", async () => {
+    const result = await invokeWindowApi("toggle_main_maximize");
+    if (!result?.ok) return;
+    const button = $("#btn-window-maximize");
+    const label = result.maximized ? "还原" : "最大化";
+    button.title = label;
+    button.setAttribute("aria-label", label);
+  });
+
+  $("#btn-window-close").addEventListener("click", async () => {
+    if (!(await invokeWindowApi("close_main_window"))) {
+      window.close();
+    }
   });
 
   // ---------- Init ----------

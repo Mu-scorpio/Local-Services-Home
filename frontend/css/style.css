@@ -88,6 +88,77 @@ body {
   background-attachment: fixed;
 }
 
+/* Frameless main-window title bar */
+.main-titlebar {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 44px;
+  padding: 0 10px 0 16px;
+  background: color-mix(in srgb, var(--bg-elevated) 94%, var(--primary-soft));
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  user-select: none;
+  -webkit-app-region: drag;
+}
+
+.main-titlebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  font-size: 0.82rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.main-titlebar-icon {
+  width: 20px;
+  height: 20px;
+  display: block;
+  border-radius: 5px;
+  flex: 0 0 auto;
+}
+
+.main-titlebar-actions {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  -webkit-app-region: no-drag;
+}
+
+.main-titlebar-btn {
+  width: 32px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.main-titlebar-btn:hover {
+  background: var(--bg-card-hover);
+  color: var(--text);
+}
+
+.main-titlebar-btn:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
+}
+
+.main-titlebar-close:hover {
+  background: var(--danger);
+  color: #fff;
+}
+
 button, input, select {
   font: inherit;
   color: inherit;

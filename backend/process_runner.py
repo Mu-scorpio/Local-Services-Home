@@ -31,7 +31,7 @@ def resolve_script(directory: str | Path, script_relative: str) -> Path:
     return full
 
 
-def run_script(directory: str | Path, script_relative: str, *, hidden: bool = False) -> int:
+def run_script(directory: str | Path, script_relative: str) -> int:
     """
     Execute a start/stop script.
     Returns subprocess PID of the launcher process.
@@ -41,7 +41,7 @@ def run_script(directory: str | Path, script_relative: str, *, hidden: bool = Fa
     suffix = script.suffix.lower()
 
     if suffix in {".bat", ".cmd"}:
-        # /c runs and exits; CREATE_NEW_CONSOLE keeps a visible window for the script
+        # /c runs and exits without opening a console window.
         cmd = ["cmd.exe", "/c", str(script)]
     elif suffix == ".ps1":
         cmd = [
@@ -63,16 +63,10 @@ def run_script(directory: str | Path, script_relative: str, *, hidden: bool = Fa
 
     if sys.platform == "win32":
         # CREATE_NO_WINDOW = 0x08000000
-        # CREATE_NEW_CONSOLE = 0x00000010
-        # DETACHED_PROCESS = 0x00000008
-        if hidden:
-            kwargs["creationflags"] = 0x08000000  # CREATE_NO_WINDOW
-            kwargs["startupinfo"] = _hidden_startupinfo()
-        else:
-            kwargs["creationflags"] = 0x00000010  # CREATE_NEW_CONSOLE
+        kwargs["creationflags"] = 0x08000000
+        kwargs["startupinfo"] = _hidden_startupinfo()
     else:
-        if hidden:
-            kwargs["start_new_session"] = True
+        kwargs["start_new_session"] = True
 
     proc = subprocess.Popen(cmd, **kwargs)
     return proc.pid

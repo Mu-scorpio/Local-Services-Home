@@ -183,7 +183,7 @@ def _run_on_ui(native, fn) -> bool:
 
 
 class DesktopApp:
-    """Tray + main window + compact popup.
+    """Tray + frameless main window + compact popup.
 
     Important (Windows / EdgeChromium / pywebview):
     - The *first* create_window() is the master and owns the message loop.
@@ -217,6 +217,16 @@ class DesktopApp:
         def close_popup(self):
             self._app.hide_popup()
             return True
+
+        def close_main_window(self):
+            self._app.hide_main_window()
+            return True
+
+        def minimize_main_window(self):
+            return self._app.minimize_main_window()
+
+        def toggle_main_maximize(self):
+            return self._app.toggle_main_maximize()
 
         def open_external(self, url: str):
             import webbrowser
@@ -316,6 +326,38 @@ class DesktopApp:
             native.Hide()
 
         return _run_on_ui(native, _do)
+
+    def minimize_main_window(self) -> bool:
+        native = self._main_native()
+        if native is None:
+            return False
+
+        def _do():
+            from System.Windows.Forms import FormWindowState
+
+            native.WindowState = FormWindowState.Minimized
+
+        return _run_on_ui(native, _do)
+
+    def toggle_main_maximize(self) -> dict[str, bool]:
+        native = self._main_native()
+        if native is None:
+            return {"ok": False, "maximized": False}
+
+        state = {"maximized": False}
+
+        def _do():
+            from System.Windows.Forms import FormWindowState
+
+            if native.WindowState == FormWindowState.Maximized:
+                native.WindowState = FormWindowState.Normal
+            else:
+                native.WindowState = FormWindowState.Maximized
+            state["maximized"] = native.WindowState == FormWindowState.Maximized
+
+        if not _run_on_ui(native, _do):
+            return {"ok": False, "maximized": False}
+        return {"ok": True, **state}
 
     # ------ Public window API ------
 
@@ -442,8 +484,12 @@ class DesktopApp:
             resizable=True,
             fullscreen=False,
             on_top=False,
+            frameless=True,
+            easy_drag=True,
+            shadow=True,
             hidden=True,
             background_color="#0f1218",
+            js_api=self._api,
         )
 
         def on_main_closing():
@@ -477,8 +523,8 @@ class DesktopApp:
         self.popup_window.events.closing += on_popup_closing
 
         def on_shown():
-            # Both windows briefly Show() then Hide() when hidden=True.
-            # Mark ready so tray actions can use native handles.
+            # Both frameless windows briefly Show() then Hide() when hidden=True.
+            # Mark ready so tray actions and custom title bars can use native handles.
             self._ready.set()
             # Ensure they stay hidden after the bootstrap Show/Hide dance
             try:

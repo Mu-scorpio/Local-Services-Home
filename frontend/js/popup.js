@@ -240,9 +240,8 @@
         $("#footer-status").textContent = `启动中: ${s.name}...`;
         const r = await api(`/api/services/${id}/start`, {
           method: "POST",
-          body: JSON.stringify({ hidden: false }),
         });
-        toast(r.message || "已启动", "success");
+        toast(r.message || "已无窗口启动", "success");
         $("#footer-status").textContent = "就绪";
         setTimeout(pollStatus, 1500);
         return;

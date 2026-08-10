@@ -83,10 +83,6 @@ class DiscoverRequest(BaseModel):
     port: int = Field(..., ge=1, le=65535)
 
 
-class StartRequest(BaseModel):
-    hidden: bool = False
-
-
 class StopRequest(BaseModel):
     # kill = end process on port (default); script = run stop_script if configured
     mode: str = "kill"
@@ -260,7 +256,7 @@ def delete_service(service_id: str) -> None:
     clear_icon(service_id)
 
 
-def start_service(service_id: str, *, hidden: bool = False) -> dict:
+def start_service(service_id: str) -> dict:
     item = _get_raw(service_id)
     port = int(item.get("port") or 0)
     if port and check_local_port(port):
@@ -274,12 +270,12 @@ def start_service(service_id: str, *, hidden: bool = False) -> dict:
     directory = item.get("directory")
     if not script or not directory:
         raise ScriptError("未配置启动脚本或服务目录，请先编辑服务并指定启动脚本")
-    pid = run_script(directory, script, hidden=hidden)
+    pid = run_script(directory, script)
     invalidate_listen_cache()
     return {
         "ok": True,
         "pid": pid,
-        "hidden": hidden,
+        "hidden": True,
         "message": "已发送启动命令，状态将稍后更新",
     }
 
@@ -295,7 +291,7 @@ def stop_service(service_id: str, *, mode: str = "kill") -> dict:
         script = item.get("stop_script")
         if not script:
             raise ScriptError("未配置停止脚本")
-        pid = run_script(item["directory"], script, hidden=True)
+        pid = run_script(item["directory"], script)
         return {"ok": True, "pid": pid, "mode": "script", "message": "已执行停止脚本，状态将稍后更新"}
 
     # Default: kill listener process on port
@@ -305,7 +301,7 @@ def stop_service(service_id: str, *, mode: str = "kill") -> dict:
         # Fallback to stop script if kill cannot find process
         script = item.get("stop_script")
         if script and item.get("directory"):
-            pid = run_script(item["directory"], script, hidden=True)
+            pid = run_script(item["directory"], script)
             return {
                 "ok": True,
                 "pid": pid,

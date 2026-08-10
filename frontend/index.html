@@ -22,6 +22,30 @@
   <link rel="stylesheet" href="/css/style.css" />
 </head>
 <body>
+  <div class="main-titlebar" id="main-titlebar">
+    <div class="main-titlebar-brand">
+      <img class="main-titlebar-icon" src="/assets/app-icon.svg" alt="" />
+      <span>本地服务管理</span>
+    </div>
+    <div class="main-titlebar-actions">
+      <button type="button" class="main-titlebar-btn" id="btn-window-minimize" title="最小化" aria-label="最小化">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M5 12h14" />
+        </svg>
+      </button>
+      <button type="button" class="main-titlebar-btn" id="btn-window-maximize" title="最大化" aria-label="最大化">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8">
+          <rect x="5" y="5" width="14" height="14" rx="1" />
+        </svg>
+      </button>
+      <button type="button" class="main-titlebar-btn main-titlebar-close" id="btn-window-close" title="收起" aria-label="收起">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <line x1="18" y1="6" x2="6" y2="18" />
+          <line x1="6" y1="6" x2="18" y2="18" />
+        </svg>
+      </button>
+    </div>
+  </div>
   <div class="app">
     <header class="header">
       <div class="header-left">
