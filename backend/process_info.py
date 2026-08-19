@@ -1,4 +1,4 @@
-"""Port ↔ process discovery and process-tree kill (Windows-first)."""
+"""Port ↔ process discovery and process-tree kill (Windows/macOS/Linux)."""
 
 from __future__ import annotations
 
@@ -22,11 +22,15 @@ class ProcessInfoError(Exception):
     pass
 
 
-_SCRIPT_EXTS = {".bat", ".cmd", ".ps1", ".py", ".js", ".mjs", ".ts", ".exe", ".jar"}
+_SCRIPT_EXTS = {".bat", ".cmd", ".ps1", ".sh", ".command", ".zsh", ".py", ".js", ".mjs", ".ts", ".exe", ".jar"}
 _SYSTEM_DIR_MARKERS = (
     "windows\\system32",
     "windows\\syswow64",
     "program files\\windowsapps",
+    "/system/library",
+    "/usr/lib",
+    "/usr/bin",
+    "/usr/sbin",
 )
 
 # One net_connections() scan is expensive; share it across multi-port status checks.
@@ -41,31 +45,37 @@ def _require_psutil() -> None:
         raise ProcessInfoError("缺少依赖 psutil，请执行: python -m pip install psutil")
 
 
+def _iter_connections_with_pid():
+    """Yield (connection, pid) pairs, falling back to per-process scans on macOS."""
+    _require_psutil()
+    try:
+        conns = psutil.net_connections(kind="inet")
+        for c in conns:
+            yield c, (c.pid if c.pid else 0)
+    except (psutil.AccessDenied, OSError):
+        # Fallback: iterate processes (may miss some without elevation).
+        for proc in psutil.process_iter(["pid"]):
+            pid = proc.info["pid"]
+            try:
+                for c in proc.connections(kind="inet"):
+                    yield c, pid
+            except (psutil.Error, OSError):
+                continue
+
+
 def _collect_listen_map() -> dict[int, list[int]]:
     """Build port → sorted listener PID list from a single net_connections pass."""
     _require_psutil()
     by_port: dict[int, set[int]] = {}
-    try:
-        conns = psutil.net_connections(kind="inet")
-    except (psutil.AccessDenied, OSError):
-        # Fallback: iterate processes (may miss some without elevation)
-        conns = []
-        for proc in psutil.process_iter(["pid"]):
-            try:
-                for c in proc.connections(kind="inet"):
-                    conns.append(c)
-            except (psutil.Error, OSError):
-                continue
-
-    for c in conns:
+    for c, pid in _iter_connections_with_pid():
         try:
             if c.status != psutil.CONN_LISTEN:
                 continue
             if not c.laddr:
                 continue
             port = int(c.laddr.port)
-            if c.pid and c.pid > 0:
-                by_port.setdefault(port, set()).add(int(c.pid))
+            if pid and pid > 0:
+                by_port.setdefault(port, set()).add(int(pid))
         except (AttributeError, TypeError, ValueError):
             continue
     return {port: sorted(pids) for port, pids in by_port.items()}
@@ -100,23 +110,37 @@ def find_listener_pids(port: int, *, use_cache: bool = True) -> list[int]:
     return list(_get_listen_map(force=True).get(int(port), []))
 
 
+def _safe_str(value: Any) -> Any:
+    """Return a UTF-8-safe string, replacing any lone surrogates."""
+    if value is None:
+        return None
+    if isinstance(value, bytes):
+        return value.decode("utf-8", errors="replace")
+    text = str(value)
+    try:
+        text.encode("utf-8")
+        return text
+    except UnicodeEncodeError:
+        return text.encode("utf-8", errors="replace").decode("utf-8")
+
+
 def get_process_snapshot(pid: int) -> dict[str, Any]:
     """Basic process info for a PID."""
     _require_psutil()
     try:
         p = psutil.Process(pid)
         with p.oneshot():
-            name = p.name()
+            name = _safe_str(p.name())
             try:
-                exe = p.exe()
+                exe = _safe_str(p.exe())
             except (psutil.Error, OSError):
                 exe = None
             try:
-                cwd = p.cwd()
+                cwd = _safe_str(p.cwd())
             except (psutil.Error, OSError):
                 cwd = None
             try:
-                cmdline = p.cmdline()
+                cmdline = [_safe_str(x) for x in p.cmdline()]
             except (psutil.Error, OSError):
                 cmdline = []
             try:
@@ -486,9 +510,10 @@ def ports_runtime_status(ports: list[int]) -> dict[int, dict[str, Any]]:
     return result
 
 
-# Common Windows system / noise processes (hide by default in explorer UI).
+# Common Windows/macOS system / noise processes (hide by default in explorer UI).
 _SYSTEM_PROCESS_NAMES = frozenset(
     {
+        # Windows
         "system",
         "idle",
         "registry",
@@ -506,6 +531,49 @@ _SYSTEM_PROCESS_NAMES = frozenset(
         "memory compression",
         "system idle process",
         "secure system",
+        # macOS
+        "kernel_task",
+        "launchd",
+        "syslogd",
+        "configd",
+        "opendirectoryd",
+        "notifyd",
+        "distnoted",
+        "cfprefsd",
+        "loginwindow",
+        "windowserver",
+        "coreaudiod",
+        "airportd",
+        "bluetoothd",
+        "wifi",
+        "wi-fi",
+        "rapportd",
+        "sharingd",
+        "bird",
+        "cloudd",
+        "nsurlsessiond",
+        "nsurlstoraged",
+        "symptomsd",
+        "suggestd",
+        "mediaremoted",
+        "locationd",
+        "mds",
+        "mds_stores",
+        "mdworker",
+        "mdworker_shared",
+        "iconservicesagent",
+        "iconservicesstorageagent",
+        "duetexpertcenter",
+        "usereventagent",
+        "sandboxd",
+        "securityd",
+        "taskgated",
+        "hidd",
+        "usbd",
+        "appleeventsd",
+        "fseventsd",
+        "corespotlightd",
+        "spotlight",
     }
 )
 
@@ -546,23 +614,11 @@ def list_listening_ports(
     if proto_filter not in {"all", "tcp", "udp"}:
         proto_filter = "all"
 
-    # kind=inet covers IPv4+IPv6 TCP/UDP
-    try:
-        conns = psutil.net_connections(kind="inet")
-    except (psutil.AccessDenied, OSError):
-        conns = []
-        for proc in psutil.process_iter(["pid"]):
-            try:
-                for c in proc.connections(kind="inet"):
-                    conns.append(c)
-            except (psutil.Error, OSError):
-                continue
-
     # (pid) -> list of binding dicts
     by_pid: dict[int, list[dict[str, Any]]] = {}
     total_raw = 0
 
-    for c in conns:
+    for c, pid in _iter_connections_with_pid():
         try:
             status = getattr(c, "status", None)
             sock_type = getattr(c, "type", None)
@@ -586,7 +642,7 @@ def list_listening_ports(
             ip = getattr(c.laddr, "ip", None) or ""
             if local_only and not _is_loopback_or_any(str(ip)):
                 continue
-            pid = int(c.pid) if c.pid and c.pid > 0 else 0
+            pid = int(pid) if pid and pid > 0 else 0
             total_raw += 1
             entry = {
                 "protocol": proto,
@@ -611,7 +667,7 @@ def list_listening_ports(
                 cwd = snap.get("cwd")
             except ProcessInfoError:
                 try:
-                    name = psutil.Process(pid).name()
+                    name = _safe_str(psutil.Process(pid).name())
                 except psutil.Error:
                     name = f"pid-{pid}"
 

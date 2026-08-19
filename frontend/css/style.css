@@ -105,6 +105,11 @@ body {
   -webkit-app-region: drag;
 }
 
+/* On macOS use the native title bar, so hide the custom HTML one. */
+.platform-mac .main-titlebar {
+  display: none;
+}
+
 .main-titlebar-brand {
   display: flex;
   align-items: center;

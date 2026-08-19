@@ -50,6 +50,12 @@ def run_script(directory: str | Path, script_relative: str) -> int:
             "-ExecutionPolicy", "Bypass",
             "-File", str(script),
         ]
+    elif suffix == ".zsh":
+        # Run zsh scripts without opening Terminal.
+        cmd = ["/bin/zsh", str(script)]
+    elif suffix in {".sh", ".command"}:
+        # Run POSIX shell scripts without opening Terminal.
+        cmd = ["/bin/sh", str(script)]
     else:
         raise ScriptError(f"不支持的脚本类型: {suffix}")
 

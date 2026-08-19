@@ -11,9 +11,10 @@
 
 <p align="center">
   <a href="https://github.com/Mu-scorpio/local-services-home/releases/latest">
-    <img src="https://img.shields.io/github/v/release/Mu-scorpio/local-services-home?style=for-the-badge&label=Download%20EXE&color=4f8cff" alt="Download" />
+    <img src="https://img.shields.io/github/v/release/Mu-scorpio/local-services-home?style=for-the-badge&label=Download&color=4f8cff" alt="Download" />
   </a>
   <img src="https://img.shields.io/badge/Windows-10%2F11-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows" />
+  <img src="https://img.shields.io/badge/macOS-12%2B-333333?style=for-the-badge&logo=apple&logoColor=white" alt="macOS" />
   <img src="https://img.shields.io/badge/Python-3.10%2B-3776AB?style=for-the-badge&logo=python&logoColor=white" alt="Python" />
   <img src="https://img.shields.io/badge/License-Personal-3ecf8e?style=for-the-badge" alt="License" />
 </p>
@@ -47,7 +48,7 @@
 | 能力 | 说明 |
 |------|------|
 | **服务卡片** | 登记端口、目录、启动脚本；一键打开 WebUI |
-| **启动 / 无窗口启动 / 停止** | 跑 bat/ps1；停止时按端口结束进程树 |
+| **启动 / 无窗口启动 / 停止** | 跑 bat/ps1/sh/zsh/command；停止时按端口结束进程树 |
 | **本地监听端口探测** | 类似 FRP 风格的进程分组端口表；过滤 TCP/UDP、隐藏系统进程 |
 | **从端口探测添加** | 运行中服务可自动识别目录与脚本 |
 | **系统托盘** | 后台常驻；快捷面板 + 主窗口按需打开，减轻闲置占用 |
@@ -57,30 +58,45 @@
 
 ## 30 秒上手
 
-### 方式一：直接用 EXE（推荐）
+### 方式一：直接用安装包
 
+**Windows**
 1. 打开 [Releases](https://github.com/Mu-scorpio/local-services-home/releases/latest)  
 2. 下载 **`local-services-home.exe`**（单文件，复制即用）  
 3. 双击运行 → 托盘图标 → 快捷面板 / 主窗口  
 4. 点 **端口探测** 看看本机都开了啥，或 **添加服务** 登记常用 WebUI  
 
-用户数据：`%LOCALAPPDATA%\Local Services Home\`  
-管理器地址：`http://127.0.0.1:18888`
+用户数据：`%LOCALAPPDATA%\Local Services Home\`
+
+**macOS**
+1. 下载/构建 **`本地服务管理.app`** 后拖入“应用程序”或直接运行
+2. 首次打开若被 Gatekeeper 拦截，可在“系统设置 → 隐私与安全性”中允许
+3. 菜单栏出现托盘图标 → 快捷面板 / 主窗口
+
+用户数据：`~/Library/Application Support/Local Services Home/`
+
+管理器地址（两种系统相同）：`http://127.0.0.1:18888`
 
 ### 方式二：源码运行
+
+**Windows**
 
 ```bat
 pip install -r requirements.txt
 python -m backend.desktop
 ```
 
-打包：
+**macOS / Linux**
 
-```bat
-build.bat
+```bash
+python3 -m pip install -r requirements.txt
+python3 -m backend.desktop
 ```
 
-产物：`dist\本地服务管理.exe`（单文件）
+打包：
+
+- Windows：`build.bat` → `dist\本地服务管理.exe`
+- macOS：`./build.sh` → `dist/本地服务管理.app`
 
 ---
 
@@ -97,7 +113,7 @@ build.bat
 
 - **前端**：原生 HTML / CSS / JS，无构建  
 - **后端**：FastAPI + Uvicorn，仅绑定本机  
-- **状态**：以「端口是否可连 + 监听进程」为准，而不是 bat 是否还在  
+- **状态**：以「端口是否可连 + 监听进程」为准，而不是脚本是否还在
 - **桌面**：pywebview + 系统托盘；闲置时主窗口 / 弹窗按需创建  
 - **安全边界**：默认 `127.0.0.1`；脚本路径限制在已登记目录内  
 
@@ -109,8 +125,10 @@ build.bat
 backend/     # API、进程/端口、桌面入口
 frontend/    # 主窗口 + 托盘快捷面板
 docs/        # 截图与文档资源
-build.bat    # 一键打成单个 EXE
+build.bat    # Windows 一键打成单个 EXE
 build.spec
+build.sh     # macOS 一键打成 .app
+build_mac.spec
 ```
 
 ---
