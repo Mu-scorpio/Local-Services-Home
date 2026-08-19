@@ -25,8 +25,11 @@ def _default_data_dir() -> Path:
             return Path(local_app_data) / APP_DATA_NAME
         return Path.home() / "AppData" / "Local" / APP_DATA_NAME
 
-    # Keep development and non-Windows runs portable while preserving the same
-    # per-user isolation principle.
+    # macOS uses ~/Library/Application Support by convention.
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / APP_DATA_NAME
+
+    # Keep Linux/BSD runs portable while preserving the same per-user isolation.
     xdg = os.environ.get("XDG_DATA_HOME")
     return (Path(xdg) if xdg else Path.home() / ".local" / "share") / APP_DATA_NAME
 
@@ -60,14 +63,19 @@ FRONTEND_DIR = ROOT_DIR / "frontend"
 MANAGER_HOST = "127.0.0.1"
 MANAGER_PORT = 18888
 
-SCRIPT_EXTENSIONS = {".bat", ".cmd", ".ps1"}
+SCRIPT_EXTENSIONS = {".bat", ".cmd", ".ps1", ".sh", ".command", ".zsh"}
 
 START_KEYWORDS = ("start", "run", "启动", "开启", "server")
 STOP_KEYWORDS = ("stop", "kill", "停止", "关闭", "shutdown")
 
 # Exact names get highest priority (stem + preferred ext order)
-PREFERRED_START_NAMES = ("start.bat", "start.cmd", "start.ps1", "run.bat", "启动.bat")
-PREFERRED_STOP_NAMES = ("stop.bat", "stop.cmd", "stop.ps1", "停止.bat")
+PREFERRED_START_NAMES = (
+    "start.bat", "start.cmd", "start.ps1", "start.sh", "start.command", "start.zsh",
+    "run.bat", "run.sh", "run.command", "run.zsh", "启动.bat", "启动.sh",
+)
+PREFERRED_STOP_NAMES = (
+    "stop.bat", "stop.cmd", "stop.ps1", "stop.sh", "stop.command", "stop.zsh", "停止.bat", "停止.sh",
+)
 
 
 def _copy_or_merge_services(source: Path, target: Path) -> None:

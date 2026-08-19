@@ -1,4 +1,4 @@
-"""Native folder picker for local desktop use (Windows-first)."""
+"""Native folder picker for local desktop use (Windows/macOS)."""
 
 from __future__ import annotations
 
@@ -26,19 +26,23 @@ def pick_folder(initial_dir: str | None = None) -> str:
         if p.is_dir():
             init = str(p.resolve())
 
-    # In frozen (PyInstaller exe) mode, sys.executable is the app itself,
-    # so tkinter subprocess won't work. Use PowerShell directly.
+    # In frozen (PyInstaller exe/app) mode, sys.executable is the app itself,
+    # so tkinter subprocess won't work. Use platform-native pickers.
     if getattr(sys, 'frozen', False):
         if sys.platform == "win32":
             return _pick_with_powershell(init)
-        raise FolderPickError("打包模式仅支持 Windows")
+        if sys.platform == "darwin":
+            return _pick_with_applescript(init)
+        raise FolderPickError("打包模式目前仅支持 Windows/macOS")
 
-    # Prefer tkinter (stdlib); fall back to PowerShell FolderBrowserDialog
+    # Prefer tkinter (stdlib); fall back to platform-native pickers.
     try:
         return _pick_with_tk(init)
     except Exception:
         if sys.platform == "win32":
             return _pick_with_powershell(init)
+        if sys.platform == "darwin":
+            return _pick_with_applescript(init)
         raise
 
 
@@ -91,6 +95,33 @@ if path:
     if not path:
         raise FolderPickCancelled("已取消选择")
     return path
+
+
+def _pick_with_applescript(initial_dir: str) -> str:
+    """Native macOS folder picker via AppleScript (works in frozen .app too)."""
+    escaped = initial_dir.replace("\\", "\\\\").replace('"', '\\"') if initial_dir else ""
+    script = 'POSIX path of (choose folder with prompt "Select service folder"'
+    if escaped:
+        script += f' default location POSIX file "{escaped}"'
+    script += ')'
+
+    proc = subprocess.run(
+        ["osascript", "-e", script],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=600,
+    )
+    if proc.returncode != 0:
+        err = (proc.stderr or proc.stdout or "").strip()
+        if "cancel" in err.lower() or "user canceled" in err.lower() or "User canceled" in err:
+            raise FolderPickCancelled("已取消选择")
+        raise FolderPickError(err or "文件夹选择失败")
+    path = (proc.stdout or "").strip()
+    if not path:
+        raise FolderPickCancelled("已取消选择")
+    return str(Path(path).resolve())
 
 
 def _pick_with_powershell(initial_dir: str) -> str:

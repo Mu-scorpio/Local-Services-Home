@@ -35,7 +35,6 @@ _server_started = threading.Event()
 def _kill_existing_on_port():
     """Kill any existing process listening on MANAGER_PORT (stale server)."""
     import socket
-    import subprocess
 
     try:
         with socket.create_connection((MANAGER_HOST, MANAGER_PORT), timeout=0.3):
@@ -43,36 +42,51 @@ def _kill_existing_on_port():
     except OSError:
         return
 
-    if sys.platform == "win32":
+    try:
+        import psutil
+    except ImportError:
+        return
+
+    try:
+        from backend.process_info import _iter_connections_with_pid
+    except Exception:
+        return
+
+    pids: set[int] = set()
+    for c, pid in _iter_connections_with_pid():
         try:
-            out = subprocess.check_output(
-                ["netstat", "-ano"],
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                creationflags=0x08000000,
-            )
-            needle = f":{MANAGER_PORT}"
-            for line in out.splitlines():
-                if "LISTENING" not in line.upper():
-                    continue
-                if needle not in line:
-                    continue
-                parts = line.split()
-                if len(parts) >= 2:
-                    try:
-                        pid = int(parts[-1])
-                        if pid > 0:
-                            subprocess.run(
-                                ["taskkill", "/PID", str(pid), "/F"],
-                                capture_output=True,
-                                creationflags=0x08000000,
-                            )
-                    except (ValueError, OSError):
-                        pass
-        except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+            if (
+                getattr(c, "laddr", None)
+                and int(c.laddr.port) == MANAGER_PORT
+                and c.status == psutil.CONN_LISTEN
+                and pid
+                and pid > 0
+            ):
+                pids.add(int(pid))
+        except (AttributeError, TypeError, ValueError):
+            continue
+    for pid in pids:
+        try:
+            proc = psutil.Process(pid)
+            proc.terminate()
+        except psutil.Error:
+            continue
+    procs = []
+    for pid in pids:
+        try:
+            procs.append(psutil.Process(pid))
+        except psutil.Error:
             pass
-        time.sleep(0.5)
+    try:
+        _, alive = psutil.wait_procs(procs, timeout=1.5) if procs else ([], [])
+    except psutil.Error:
+        alive = []
+    for proc in alive:
+        try:
+            proc.kill()
+        except psutil.Error:
+            pass
+    time.sleep(0.3)
 
 
 def _run_server():
@@ -109,7 +123,7 @@ def start_backend():
 
 
 # ---------------------------------------------------------------------------
-# Win32 helpers
+# Window helpers (Win32 native path is used on Windows; pywebview fallback elsewhere)
 # ---------------------------------------------------------------------------
 
 
@@ -164,7 +178,7 @@ def _work_area_physical_near_cursor():
 
 def _run_on_ui(native, fn) -> bool:
     """Run fn on the WinForms UI thread. Returns True if scheduled/ran."""
-    if native is None:
+    if sys.platform != "win32" or native is None:
         return False
     try:
         from System import Action
@@ -185,13 +199,18 @@ def _run_on_ui(native, fn) -> bool:
 class DesktopApp:
     """Tray + frameless main window + compact popup.
 
-    Important (Windows / EdgeChromium / pywebview):
-    - The *first* create_window() is the master and owns the message loop.
+    Platform notes:
+    - Windows / EdgeChromium / pywebview:
+      The *first* create_window() is the master and owns the message loop.
       It must be a real UI window (we use main), not a 1x1 anchor.
-    - pywebview.move() multiplies coords by DPI scale; Win32 APIs return
+      pywebview.move() multiplies coords by DPI scale; Win32 APIs return
       physical pixels. Positioning the popup via native.Location avoids the
       double-scale off-screen bug on 125%/150% DPI.
-    - show/hide/move from the tray thread must go through WinForms Invoke.
+      show/hide/move from the tray thread must go through WinForms Invoke.
+    - macOS / Cocoa:
+      Uses a native NSStatusItem + manually positioned NSPanel for the quick panel, and toggles
+      the Dock icon via NSApplication activation policy when the main window
+      is shown/hidden.
     """
 
     _POPUP_W = 380
@@ -201,8 +220,10 @@ class DesktopApp:
         self.main_window = None
         self.popup_window = None
         self.tray_icon = None
+        self.mac_status = None
         self._popup_visible = False
         self._main_visible = False
+        self._main_maximized = False
         self._ready = threading.Event()
         self._api = self.Api(self)
 
@@ -246,6 +267,8 @@ class DesktopApp:
 
     def _place_and_show_popup_native(self) -> bool:
         """Position + show popup using WinForms native handle (physical px)."""
+        if sys.platform != "win32":
+            return False
         native = self._popup_native()
         if native is None:
             return False
@@ -289,6 +312,8 @@ class DesktopApp:
         return _run_on_ui(native, _do)
 
     def _hide_popup_native(self) -> bool:
+        if sys.platform != "win32":
+            return False
         native = self._popup_native()
         if native is None:
             return False
@@ -299,6 +324,8 @@ class DesktopApp:
         return _run_on_ui(native, _do)
 
     def _show_main_native(self) -> bool:
+        if sys.platform != "win32":
+            return False
         native = self._main_native()
         if native is None:
             return False
@@ -318,6 +345,8 @@ class DesktopApp:
         return _run_on_ui(native, _do)
 
     def _hide_main_native(self) -> bool:
+        if sys.platform != "win32":
+            return False
         native = self._main_native()
         if native is None:
             return False
@@ -328,6 +357,14 @@ class DesktopApp:
         return _run_on_ui(native, _do)
 
     def minimize_main_window(self) -> bool:
+        if sys.platform != "win32":
+            if self.main_window:
+                try:
+                    self.main_window.minimize()
+                    return True
+                except Exception:
+                    pass
+            return False
         native = self._main_native()
         if native is None:
             return False
@@ -340,6 +377,19 @@ class DesktopApp:
         return _run_on_ui(native, _do)
 
     def toggle_main_maximize(self) -> dict[str, bool]:
+        if sys.platform != "win32":
+            if self.main_window:
+                try:
+                    if self._main_maximized:
+                        self.main_window.restore()
+                        self._main_maximized = False
+                    else:
+                        self.main_window.maximize()
+                        self._main_maximized = True
+                    return {"ok": True, "maximized": self._main_maximized}
+                except Exception:
+                    pass
+            return {"ok": False, "maximized": False}
         native = self._main_native()
         if native is None:
             return {"ok": False, "maximized": False}
@@ -361,23 +411,36 @@ class DesktopApp:
 
     # ------ Public window API ------
 
+    def _update_dock_icon(self, visible: bool) -> None:
+        if sys.platform != "darwin":
+            return
+        try:
+            from backend.mac_native import set_dock_icon_visible
+
+            set_dock_icon_visible(visible)
+        except Exception:
+            pass
+
     def show_main_window(self):
         if not self._ready.wait(timeout=15):
             return
         if self._show_main_native():
             self._main_visible = True
+            self._update_dock_icon(True)
             return
         # Fallback to pywebview API
         if self.main_window:
             try:
                 self.main_window.show()
                 self._main_visible = True
+                self._update_dock_icon(True)
             except Exception:
                 pass
 
     def hide_main_window(self):
         if self._hide_main_native():
             self._main_visible = False
+            self._update_dock_icon(False)
             return
         if self.main_window:
             try:
@@ -385,6 +448,7 @@ class DesktopApp:
             except Exception:
                 pass
             self._main_visible = False
+            self._update_dock_icon(False)
 
     def toggle_popup(self):
         if self._popup_visible:
@@ -394,6 +458,10 @@ class DesktopApp:
 
     def show_popup(self):
         if not self._ready.wait(timeout=15):
+            return
+        if sys.platform == "darwin" and self.mac_status is not None:
+            self.mac_status.show_panel()
+            self._popup_visible = True
             return
         if self._place_and_show_popup_native():
             self._popup_visible = True
@@ -407,6 +475,10 @@ class DesktopApp:
                 pass
 
     def hide_popup(self):
+        if sys.platform == "darwin" and self.mac_status is not None:
+            self.mac_status.hide_panel()
+            self._popup_visible = False
+            return
         if self._hide_popup_native():
             self._popup_visible = False
             return
@@ -418,6 +490,11 @@ class DesktopApp:
             self._popup_visible = False
 
     def quit_app(self):
+        if self.mac_status is not None:
+            try:
+                self.mac_status.stop()
+            except Exception:
+                pass
         if self.tray_icon:
             try:
                 self.tray_icon.stop()
@@ -469,9 +546,15 @@ class DesktopApp:
         print(f"[desktop] backend ready http://{MANAGER_HOST}:{MANAGER_PORT}")
         print("[desktop] tray init...")
 
-        self._setup_tray()
-        threading.Thread(target=self.tray_icon.run, daemon=True).start()
-        time.sleep(0.25)
+        if sys.platform == "darwin":
+            from backend.mac_native import MacStatusBar, set_dock_icon_visible
+
+            set_dock_icon_visible(False)
+            self.mac_status = MacStatusBar(self)
+        else:
+            self._setup_tray()
+            threading.Thread(target=self.tray_icon.run, daemon=True).start()
+            time.sleep(0.25)
 
         # FIRST window = master (message loop). Must be a real window, not 1x1.
         main_url = f"http://{MANAGER_HOST}:{MANAGER_PORT}/"
@@ -484,8 +567,8 @@ class DesktopApp:
             resizable=True,
             fullscreen=False,
             on_top=False,
-            frameless=True,
-            easy_drag=True,
+            frameless=sys.platform != "darwin",
+            easy_drag=sys.platform != "darwin",
             shadow=True,
             hidden=True,
             background_color="#0f1218",
@@ -498,45 +581,54 @@ class DesktopApp:
 
         self.main_window.events.closing += on_main_closing
 
-        # Popup is a child window (created before start so native exists)
-        popup_url = f"http://{MANAGER_HOST}:{MANAGER_PORT}/popup"
-        self.popup_window = webview.create_window(
-            title="服务管理",
-            url=popup_url,
-            width=self._POPUP_W,
-            height=self._POPUP_H,
-            resizable=False,
-            fullscreen=False,
-            on_top=True,
-            frameless=True,
-            easy_drag=True,
-            shadow=True,
-            hidden=True,
-            background_color="#0f1218",
-            js_api=self._api,
-        )
+        if sys.platform != "darwin":
+            # Popup is a child window (created before start so native exists)
+            popup_url = f"http://{MANAGER_HOST}:{MANAGER_PORT}/popup"
+            self.popup_window = webview.create_window(
+                title="服务管理",
+                url=popup_url,
+                width=self._POPUP_W,
+                height=self._POPUP_H,
+                resizable=False,
+                fullscreen=False,
+                on_top=True,
+                frameless=True,
+                easy_drag=True,
+                shadow=True,
+                hidden=True,
+                background_color="#0f1218",
+                js_api=self._api,
+            )
 
-        def on_popup_closing():
-            self.hide_popup()
-            return False
+            def on_popup_closing():
+                self.hide_popup()
+                return False
 
-        self.popup_window.events.closing += on_popup_closing
+            self.popup_window.events.closing += on_popup_closing
 
         def on_shown():
             # Both frameless windows briefly Show() then Hide() when hidden=True.
             # Mark ready so tray actions and custom title bars can use native handles.
             self._ready.set()
-            # Ensure they stay hidden after the bootstrap Show/Hide dance
-            try:
-                self._hide_popup_native()
-                self._hide_main_native()
-            except Exception:
-                pass
+            # Ensure they stay hidden after the bootstrap Show/Hide dance.
+            self.hide_popup()
+            self.hide_main_window()
             print("[desktop] ready — use tray: 快捷面板 / 打开主窗口")
 
         self.main_window.events.shown += on_shown
 
-        webview.start(debug=False)
+        if sys.platform == "darwin":
+            def _after_start():
+                try:
+                    from backend.mac_native import hide_dock_after_start
+
+                    hide_dock_after_start()
+                except Exception:
+                    pass
+
+            webview.start(func=_after_start, debug=False)
+        else:
+            webview.start(debug=False)
         return 0
 
 
